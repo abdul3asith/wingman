@@ -9,6 +9,7 @@ from app.contract import SessionExtract
 from app.graph import enrich, queries, writes
 from app.ingest import extract as extract_mod
 from app.ingest import transcribe
+from app.ingest.deepgram import TranscriptionError
 
 router = APIRouter(prefix="/sessions", tags=["ingest"])
 
@@ -34,12 +35,17 @@ async def create_session(audio: UploadFile | None = File(None), transcript: str 
 @router.post("/{sid}/process", response_model=SessionExtract)
 def process_session(sid: str, background: BackgroundTasks, sync_enrich: bool = False):
     """Transcribe -> extract -> write to graph -> enrich the company (background unless sync_enrich=true)."""
-    pending = _pending.pop(sid, None)
+    pending = _pending.get(sid)
     if pending is None:
         raise HTTPException(404, f"session {sid} not found or already processed")
-    text = pending["transcript"] or transcribe.transcribe_file(pending["audio_path"])
+    try:
+        text = pending["transcript"] or transcribe.transcribe_file(pending["audio_path"])
+    except TranscriptionError as e:
+        # Keep the upload pending so the user can retry /process.
+        raise HTTPException(502, str(e))
     x = extract_mod.extract(sid, text)
     writes.ingest_session(settings.USER_ID, x)
+    _pending.pop(sid, None)  # only forget the upload once it is safely in the graph
     if x.company:
         if sync_enrich:
             enrich.enrich_company(x.company.name, x.company.domain)

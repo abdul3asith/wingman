@@ -35,11 +35,27 @@ class _ExtractOut(BaseModel):
     promises: list[_PromiseOut]
 
 
-PROMPT = """You are reading a voice debrief recorded by {user} right after a conversation at {event}.
-Extract exactly one person (the one they talked to), their role and role_class, their company (guess the domain
-from the name if obvious, else null), 3-6 short lowercase topic tags (e.g. "gpu inference", "cold starts"), and every
-promise: by="me" when {user} promised something, by="them" when the other person did. Spoken emails like
-"maya at parallaxlabs dot ai" become maya@parallaxlabs.ai. The summary is 1-2 sentences.
+PROMPT = """You are reading a transcript recorded by {user} at {event}. It is one of two kinds:
+
+1. A speaker-labeled recording of a conversation ("Speaker 0: ...", "Speaker 1: ...") between {user} and
+   someone else. {user} is the person holding the recorder and may never say their own name. Work in two steps.
+   Step 1: decide which label is {user} (call it ME) and which is the other person (call it THEM), using
+   introductions ("I'm ..."), who is asking about whom, and {user}'s background ({skills}). THEM is usually the
+   one who states their company, hands over their email, or offers a referral or job; ME is usually the one asking
+   about them and collecting the contact. Extract THEM as `person`; ME is never `person`.
+   Step 2: for every promise, look at the label on the line where it was said. Label THEM -> by="them".
+   Label ME -> by="me". Example: if Speaker 1 is ME and Speaker 0 is THEM, then "Speaker 0: I'll send you the
+   blog post" gives by="them", and "Speaker 1: I'll send my repo" gives by="me".
+   If more than two speakers appear, THEM is the person {user} talked with the most.
+2. A solo voice debrief spoken by {user} about a conversation they just had. The speaker is {user} ("me");
+   extract the person they describe; by="me" for what {user} promised, by="them" for what that person promised.
+
+In both cases return exactly one person with their role (normalized to a short job title, e.g. "Head of Platform
+Engineering") and role_class (their actual job: an engineering leader is "engineer", not "recruiter", even if they
+offered a referral), their company (guess the domain from the name if obvious, else null), 3-6 short lowercase
+topic tags (e.g. "gpu inference", "cold starts"), and every promise either side made, each as a short phrase
+(e.g. "Send the cold starts blog post"). Spoken emails like "maya at parallaxlabs dot ai" become
+maya@parallaxlabs.ai. Never invent an email address: if none was said, email is null. The summary is 1-2 sentences.
 
 TRANSCRIPT:
 {transcript}"""
@@ -60,7 +76,10 @@ def extract(session_id: str, transcript: str, started_at: str | None = None) -> 
     if settings.MOCK_MODE:
         out = MOCK_EXTRACT
     else:
-        out = llm.parse(PROMPT.format(user=settings.USER_NAME, event=settings.EVENT_NAME, transcript=transcript), _ExtractOut)
+        prompt = PROMPT.format(
+            user=settings.USER_NAME, event=settings.EVENT_NAME, skills=", ".join(settings.USER_SKILLS), transcript=transcript
+        )
+        out = llm.parse(prompt, _ExtractOut)
     return SessionExtract(
         session_id=session_id,
         started_at=started_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
