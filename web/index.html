@@ -367,14 +367,16 @@ $('#recBtn').onclick = async () => {
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { say('I can’t reach the microphone.', false); return; }
   audioCtx.createMediaStreamSource(stream).connect(analyser);
   const chunks = [];
-  convRec = new MediaRecorder(stream);
+  // Opus at 32 kbps: an hour is ~15 MB. 1 s timeslice so chunks accumulate as we go; auto-stop at 60 min.
+  try { convRec = new MediaRecorder(stream, { audioBitsPerSecond: 32000 }); } catch { convRec = new MediaRecorder(stream); }
   convRec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  setTimeout(() => { if (convRec?.state === 'recording') convRec.stop(); }, 60 * 60 * 1000);
   convRec.onstop = async () => {
     clearInterval(convTimer); stream.getTracks().forEach(t => t.stop());
     $('#recBtn').classList.remove('live'); $('#recText').textContent = 'Record a conversation'; $('#recTime').textContent = '';
     await ingestConversation(new Blob(chunks, { type: convRec.mimeType || 'audio/webm' }));
   };
-  convRec.start(); convStart = Date.now(); setMode('recording');
+  convRec.start(1000); convStart = Date.now(); setMode('recording');
   $('#recBtn').classList.add('live'); $('#recText').textContent = 'Stop & save';
   convTimer = setInterval(() => { const s = Math.round((Date.now() - convStart) / 1000); $('#recTime').textContent = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; }, 250);
 };
@@ -384,7 +386,14 @@ async function ingestConversation(blob) {
   try {
     const fd = new FormData(); fd.append('audio', blob, 'conversation.webm');
     const { session_id } = await api('/sessions', { method: 'POST', body: fd });
-    const x = await api(`/sessions/${session_id}/process`, { method: 'POST' });
+    const r0 = await api(`/sessions/${session_id}/process`, { method: 'POST' });
+    const x = r0.extract;
+    if (!x) {  // transcript is saved either way; say what went wrong
+      setMode('idle');
+      addCard(`<div class="card-h"><span class="kind voice">Saved</span><h3>Transcript saved, but I couldn’t tell who you met</h3></div><div class="muted">${esc(r0.transcript.slice(0, 400))}</div>`, 'err');
+      say('I saved the recording, but I couldn’t tell who you met. Make sure their name comes up.');
+      return;
+    }
     const card = addCard(metCard(x));
     setMode('idle');
     say(`Got it: ${x.person.name}${x.company ? ' from ' + x.company.name : ''}. I'm checking the live web for them now.`);

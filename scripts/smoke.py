@@ -33,13 +33,25 @@ if health and health.get("graph_status") != "ok":
 check("GET / (web UI)", lambda: "html" if "<html" in c.get("/").text.lower() else (_ for _ in ()).throw(AssertionError("no html")))
 
 sid = check("POST /sessions (transcript)", lambda: ok(c.post("/sessions", data={"transcript": "smoke test transcript"}))["session_id"])
-extract = check("POST /sessions/{id}/process", lambda: ok(c.post(f"/sessions/{sid}/process", params={"sync_enrich": True})))
-person = extract["person"]["name"] if extract else None
+
+
+def _process():
+    out = ok(c.post(f"/sessions/{sid}/process"))
+    assert out["transcript"], "empty transcript"
+    assert "graph_status" in out, "graph_status missing"
+    return {"transcript_chars": len(out["transcript"]), "graph_status": out["graph_status"]}
+
+
+check("POST /sessions/{id}/process", _process)
 check("POST /sessions/debrief-text", lambda: ok(c.post("/sessions/debrief-text", json={
     "text": "Smoke test: met Jordan Smoke, a backend engineer at Parallax Labs. We talked about GPU inference."}))["person"]["name"])
 check("GET /agent/state", lambda: f"{len(ok(c.get('/agent/state'))['goals'])} goals")
-check("GET /sessions", lambda: f"{len(ok(c.get('/sessions')))} sessions")
-check("GET /sessions/{id}", lambda: ok(c.get(f"/sessions/{sid}"))["person"])
+# Later checks use a seeded person/session so they don't depend on what the smoke transcript extracted.
+people = check("GET /graph/people", lambda: ok(c.get("/graph/people")))
+person = people[0]["name"] if people else None
+sessions = check("GET /sessions", lambda: ok(c.get("/sessions")))
+seed_sid = sessions[0]["session_id"] if sessions else None
+check("GET /sessions/{id}", lambda: ok(c.get(f"/sessions/{seed_sid}"))["person"])
 
 check("POST /graph/enrich", lambda: f"{len(ok(c.post('/graph/enrich', json={'company': 'Lattice Compute', 'domain': 'latticecompute.ai'}))['webdocs'])} webdocs")
 cg = check("GET /graph/common-ground", lambda: ok(c.get("/graph/common-ground")))

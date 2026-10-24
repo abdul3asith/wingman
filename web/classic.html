@@ -169,7 +169,9 @@ async function processAudio(blob) {
   try {
     const fd = new FormData(); fd.append('audio', blob, 'debrief.webm');
     const { session_id } = await api('/sessions', { method: 'POST', body: fd });
-    renderExtract(await api(`/sessions/${session_id}/process?sync_enrich=true`, { method: 'POST' }));
+    const r = await api(`/sessions/${session_id}/process?sync_enrich=true`, { method: 'POST' });
+    if (r.extract) renderExtract(r.extract);
+    else throw new Error(`Transcript saved (${r.graph_status}) but no person found`);
   } catch (e) { $('#recStatus').textContent = `Failed: ${e.message}. Try again or type it below.`; $('#typedBox').open = true; }
   done(btn);
 }

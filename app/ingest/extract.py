@@ -110,6 +110,12 @@ class NoPersonFound(ValueError):
 _JUNK_NAMES = {"", "null", "none", "unknown", "n/a", "na", "them", "the person", "speaker", "speaker 0", "speaker 1"}
 
 
+def _name_was_said(name: str | None, transcript: str) -> bool:
+    """Guardrail against invented people ("John Doe"): some part of the name must appear in the transcript."""
+    low = transcript.lower()
+    return any(len(part) >= 3 and part in low for part in (name or "").lower().split())
+
+
 def extract(session_id: str, transcript: str, started_at: str | None = None) -> SessionExtract:
     if settings.MOCK_MODE:
         out = MOCK_EXTRACT
@@ -122,7 +128,7 @@ def extract(session_id: str, transcript: str, started_at: str | None = None) -> 
             out.person.email = None
         if out.company and out.company.name.strip().lower() in _JUNK_NAMES:
             out.company = None
-    if (out.person.name or "").strip().lower() in _JUNK_NAMES:
+    if (out.person.name or "").strip().lower() in _JUNK_NAMES or not _name_was_said(out.person.name, transcript):
         raise NoPersonFound("couldn't tell who you met — say their name and try again")
     if url := _linkedin_url(out.person.linkedin):
         LINKEDIN[session_id] = url
