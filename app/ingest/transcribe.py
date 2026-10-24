@@ -7,7 +7,7 @@ from app import llm
 from app.config import settings
 from app.ingest import deepgram
 
-# Mirrors MOCK_EXTRACT in extract.py: same person, company, topics, promises and spoken email.
+# Mock-mode transcript: a short two-speaker conversation in the same "Speaker N:" format Deepgram produces.
 MOCK_TRANSCRIPT = (
     "Speaker 0: Hey, I'm Maya Lindqvist, I'm an ML engineer at Parallax Labs. What are you working on?\n"
     "Speaker 1: Mostly GPU inference. I've been benchmarking CUDA graph capture to cut launch overhead.\n"
