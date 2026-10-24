@@ -1,0 +1,9 @@
+{
+  "profile": {"url": "https://www.linkedin.com/in/maya-lindqvist-demo", "headline": "ML Engineer, Serving @ Parallax Labs"},
+  "posts": [
+    {"url": "https://www.linkedin.com/posts/maya-lindqvist-demo_specdec-activity-1", "text": "Speculative decoding in prod, 6 weeks in: 2.1x on real traffic, and the draft model is only 1B. Full numbers on our blog.", "posted_at": "2026-10-22", "source": "linkedin"}
+  ],
+  "news": [
+    {"url": "https://aiwire.example/parallax-labs-series-a", "title": "Parallax Labs raises $18M Series A for faster LLM serving", "published_at": "2026-10-19"}
+  ]
+}

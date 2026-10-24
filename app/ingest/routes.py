@@ -33,12 +33,26 @@ def _run(sid: str, text: str, background: BackgroundTasks, sync_enrich: bool) ->
     except extract_mod.NoPersonFound as e:
         raise HTTPException(422, str(e))
     graph_bridge.ingest_session(x)
+    if linkedin := extract_mod.LINKEDIN.pop(sid, None):
+        from app.agent import store
+
+        store.set_linkedin(x.person.name, linkedin)
     if x.company:
         if sync_enrich:
             graph_bridge.enrich_company(x.company.name, x.company.domain)
         else:
             background.add_task(graph_bridge.enrich_company, x.company.name, x.company.domain)
+    background.add_task(_research_person, x.person.name)  # Bright Data people intel, never blocks the response
     return x
+
+
+def _research_person(name: str) -> None:
+    from app.agent import intel
+
+    try:
+        intel.research(name)
+    except Exception as e:
+        print(f"[ingest] background research for {name} failed: {e}")
 
 
 @router.post("/debrief-text", response_model=SessionExtract)

@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.agent.routes import router as agent_router
 from app.asks.routes import router as asks_router
 from app.config import settings
 from app.graph import queries, schema, writes
@@ -31,6 +32,7 @@ app = FastAPI(title="wingman", version="0.1.0", lifespan=lifespan)
 app.include_router(ingest_router)
 app.include_router(asks_router)
 app.include_router(graph_router)
+app.include_router(agent_router)
 
 
 @app.exception_handler(GraphUnavailable)

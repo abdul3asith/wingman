@@ -1,0 +1,7 @@
+{
+  "profile": {"url": "https://www.linkedin.com/in/arjun-mehta-demo", "headline": "Perception Engineer @ Northwind Robotics"},
+  "posts": [
+    {"url": "https://www.linkedin.com/posts/arjun-mehta-demo_tensorrt-activity-1", "text": "Finally fixed our int8 calibration drift on the lidar model: per-channel calibration plus a 2k-frame warehouse set. Thread below.", "posted_at": "2026-10-21", "source": "linkedin"}
+  ],
+  "news": []
+}

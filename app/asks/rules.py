@@ -20,6 +20,14 @@ def pick(role_class: str, has_matching_job: bool) -> tuple[str, str | None]:
     return RULES.get(role_class, RULES["other"])
 
 
+def attachment_for(ask_type: str) -> str | None:
+    """Attachment when the ask comes from intent segmentation rather than role_class."""
+    return {
+        "referral": settings.RESUME_URL, "resume": settings.RESUME_URL,
+        "coffee_partnership": settings.DECK_URL, "update": settings.DECK_URL, "feedback_collab": settings.DEMO_URL,
+    }.get(ask_type)
+
+
 def asset_link(promise_text: str) -> str | None:
     """Find the link for something we promised, by keyword. resume/deck/demo are built in; ASSET_LINKS adds more."""
     links = {"resume": settings.RESUME_URL, "cv": settings.RESUME_URL, "deck": settings.DECK_URL, "demo": settings.DEMO_URL}

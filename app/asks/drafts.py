@@ -28,10 +28,12 @@ PROMPT = """Write a plain-text follow-up email from {user} to {person} ({role} a
 
 ASK TYPE: {ask_type}
 {ask_instruction}
+{user}'S GOAL WITH THIS PERSON: {intent}
+WHY NOW (if present, reference it in the second sentence with its URL): {fresh}
 
 HARD RULES
 - Under {max_words} words including greeting and sign-off. Exactly one clear ask.
-- The FIRST sentence after the greeting must mention the topic "{topic}" {hook_rule}
+- The FIRST sentence after the greeting must {hook_rule}
 - {fulfilment_rule}
 - No flattery filler, no "I hope this finds you well", no markdown, no placeholders like [link].
 - Greeting "Hi {first}," and sign off with "{user}".
@@ -66,46 +68,85 @@ def words(text: str) -> int:
 # ---------------------------------------------------------------- orchestration
 
 
-def generate(person_filter: str | None = None, uid: str = settings.USER_ID) -> list[Draft]:
+def generate(person_filter: str | None = None, uid: str = settings.USER_ID, names: list[str] | None = None) -> list[Draft]:
+    """One draft per person met (or per `person_filter` / `names`). Intent segmentation, when it has run,
+    decides the ask; Bright Data intel (recent post / this week's news) supplies the 'why now' line."""
+    from app.agent import store  # local import: agent layer sits on top of asks
+
     people = graph.people(uid)
     cg_all = graph.common_ground(uid)
     radar = graph.referral_radar(uid)
     promises = graph.open_promises(uid)
+    overrides = store.ask_overrides()
+    wanted = set(names or []) | ({person_filter} if person_filter else set())
     drafts: list[Draft] = []
     for p in people:
-        if person_filter and p["name"] != person_filter:
+        if wanted and p["name"] not in wanted:
             continue
         # Prefer substantive content for the hook; a job page or homepage is a weak opener.
         cg = sorted((c for c in cg_all if c.person == p["name"]), key=lambda c: HOOK_KIND_RANK.get(c.doc_kind, 9))
         jobs = [r for r in radar if r["person"] == p["name"]]
         # Same promise can come from several sessions with one person; fulfil it once.
         mine = list({pr["text"].lower(): pr for pr in promises if pr["person"] == p["name"] and pr["by"] == "me"}.values())
-        d = build(p, cg[0] if cg else None, jobs[0] if jobs else None, mine)
+        intel = store.person_intel(p["name"])
+        fresh = (intel["posts"] or [None])[0] or _news_as_fresh((intel["news"] or [None])[0])
+        d = build(p, cg[0] if cg else None, jobs[0] if jobs else None, mine, overrides.get(p["name"]), fresh)
         graph.write_draft(d, uid)
+        if fresh and fresh.get("node") == "Post":
+            store.run("MATCH (d:Draft {id:$id}) MATCH (x:Post {url:$u}) MERGE (d)-[:BECAUSE]->(x)", {"id": d.id, "u": fresh["url"]})
         drafts.append(d)
     return drafts
 
 
-def build(p: dict, hook: CommonGround | None, job: dict | None, my_promises: list[dict]) -> Draft:
-    ask_type, attachment = rules.pick(p["role_class"], job is not None)
+def _news_as_fresh(n: dict | None) -> dict | None:
+    return {"url": n["url"], "text": n["title"], "node": "News", "label": "the news this week"} if n else None
+
+
+def _short(text: str, n: int = 14) -> str:
+    first = re.split(r"(?<=[.!?])\s", text.strip())[0]
+    w = first.split()
+    return " ".join(w[:n]) + ("…" if len(w) > n else "")
+
+
+def build(p: dict, hook: CommonGround | None, job: dict | None, my_promises: list[dict],
+          override: dict | None = None, fresh: dict | None = None) -> Draft:
+    if override and override.get("ask_type"):
+        ask_type = override["ask_type"]
+        if ask_type == "referral" and not job:
+            ask_type = "technical_followup"  # never ask for a referral without a real open role
+        attachment = rules.attachment_for(ask_type)
+    else:
+        ask_type, attachment = rules.pick(p["role_class"], job is not None)
+    if fresh and "node" not in fresh:
+        fresh = {**fresh, "node": "Post", "label": "your post this week"}
+    if not hook and fresh:
+        # No Common Ground doc: their own recent post/news becomes the opening hook.
+        hook = CommonGround(person=p["name"], company=p.get("company") or "", topic=_short(fresh["text"], 8),
+                            doc_title=_short(fresh["text"]), doc_url=fresh["url"], doc_kind=fresh["label"])
+        fresh = None
     ctx = {
+        "intent": (override or {}).get("intent") or "",
+        "fresh": f'{fresh["label"]}: "{_short(fresh["text"])}" ({fresh["url"]})' if fresh else "",
+        "fresh_url": fresh["url"] if fresh else "",
         "user": settings.USER_NAME, "event": settings.EVENT_NAME, "person": p["name"], "first": _first(p["name"]),
         "role": p.get("role") or p["role_class"], "company": p.get("company") or "your company",
-        "topic": hook.topic if hook else (p["topics"][0] if p.get("topics") else "our conversation"),
+        "topic": (hook.topic if hook and hook.doc_kind in HOOK_KIND_RANK
+                  else (p["topics"][0] if p.get("topics") else "our conversation")),
+        "post_hook": bool(hook and hook.doc_kind not in HOOK_KIND_RANK),
         "ask_type": ask_type, "attachment": attachment or "",
         "job_title": job["job_title"] if job else "", "job_url": job["job_url"] if job else "",
         "matched": ", ".join(job["matched"]) if job else "",
         "fulfil": [rules.fulfilment_line(pr["text"]) for pr in my_promises],
         "promise_texts": [pr["text"] for pr in my_promises],
     }
-    refs = _refs(hook, job, my_promises, p)
+    refs = _refs(hook, job, my_promises, p) + ([fresh["url"]] if fresh else [])
     subject = body = None
     because: list[str] = []
     if not settings.MOCK_MODE:
         subject, body, because = _llm_draft(ctx, hook, refs)
     if body is None:
         subject, body = _template(ctx, hook, job)
-        because = _template_because(hook, job, my_promises)
+        because = _template_because(hook, job, my_promises) + ([fresh["url"]] if fresh else [])
     return Draft(id=f"d_{_slug(p['name'])}", person=p["name"], email=p.get("email"), ask_type=ask_type,
                  subject=subject, body=body, because=because)
 
@@ -150,7 +191,11 @@ def _llm_draft(ctx: dict, hook: CommonGround | None, refs: list[str]) -> tuple[s
     prompt = PROMPT.format(
         **ctx, max_words=MAX_WORDS,
         ask_instruction=ASK_INSTRUCTIONS.get(ctx["ask_type"], ASK_INSTRUCTIONS["thank_you"]).format(**ctx),
-        hook_rule=(f'AND the {ctx["company"]} {hook.doc_kind} "{hook.doc_title}" with its URL {hook.doc_url}.' if hook else "."),
+        hook_rule=(
+            f'reference {hook.doc_kind} "{hook.doc_title}" with its URL {hook.doc_url}.' if ctx["post_hook"]
+            else f'mention the topic "{ctx["topic"]}" AND the {ctx["company"]} {hook.doc_kind} "{hook.doc_title}" with its URL {hook.doc_url}.' if hook
+            else f'mention the topic "{ctx["topic"]}".'
+        ),
         fulfilment_rule=("Include these promise fulfilment lines (keep the links): " + " | ".join(ctx["fulfil"])) if ctx["fulfil"] else "No promises to fulfil.",
         refs="\n".join(f"- {r}" for r in refs) or "- (none)",
     )
@@ -160,11 +205,11 @@ def _llm_draft(ctx: dict, hook: CommonGround | None, refs: list[str]) -> tuple[s
         except Exception as e:
             print(f"[drafts] LLM failed for {ctx['person']}: {e}; using template")
             return None, None, []
-        issues = problems(out.body, hook, ctx["fulfil"], ctx["topic"])
+        issues = problems(out.body, hook, ctx["fulfil"], None if ctx["post_hook"] else ctx["topic"])
         if not issues:
             # Things the rules force into the body are always evidence; the model may add other refs it used.
             forced = ([hook.topic, hook.doc_url] if hook else []) + ([ctx["job_title"]] if ctx["ask_type"] == "referral" else [])
-            forced += ctx["promise_texts"]
+            forced += ctx["promise_texts"] + ([ctx["fresh_url"]] if ctx["fresh_url"] and ctx["fresh_url"] in out.body else [])
             because = list(dict.fromkeys([*forced, *(b for b in out.because if b in refs)]))
             return out.subject, out.body.strip(), because
         print(f"[drafts] {ctx['person']} attempt {attempt + 1} rejected: {issues}")
@@ -177,10 +222,14 @@ def _llm_draft(ctx: dict, hook: CommonGround | None, refs: list[str]) -> tuple[s
 
 def _template(ctx: dict, hook: CommonGround | None, job: dict | None) -> tuple[str, str]:
     c, topic, att = ctx["company"], ctx["topic"], ctx["attachment"]
-    opener = (
-        f'After our chat about {topic} at {ctx["event"]}, I read "{hook.doc_title}" from {c} ({hook.doc_url}).'
-        if hook else f'Great talking {topic} with you at {ctx["event"]}.'
-    )
+    if ctx["post_hook"]:
+        opener = f'Saw {hook.doc_kind} ("{hook.doc_title}", {hook.doc_url}) and it picked up right where our chat at {ctx["event"]} left off.'
+    elif hook:
+        opener = f'After our chat about {topic} at {ctx["event"]}, I read "{hook.doc_title}" from {c} ({hook.doc_url}).'
+    else:
+        opener = f'Great talking {topic} with you at {ctx["event"]}.'
+    if ctx["fresh"]:
+        opener += f" Also saw {ctx['fresh']}."
     asks = {
         "referral": (
             f"Referral for {ctx['job_title']} at {c}?",

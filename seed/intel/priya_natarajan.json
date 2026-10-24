@@ -1,0 +1,10 @@
+{
+  "profile": {"url": "https://www.linkedin.com/in/priya-natarajan-demo", "headline": "Staff Engineer, Inference Runtime @ Lattice Compute"},
+  "posts": [
+    {"url": "https://www.linkedin.com/posts/priya-natarajan-demo_cold-starts-activity-1", "text": "We just shipped CUDA context snapshotting to every region: p50 cold start is now 1.9s for 70B models. Writeup in comments.", "posted_at": "2026-10-23", "source": "linkedin"},
+    {"url": "https://www.linkedin.com/posts/priya-natarajan-demo_hiring-activity-2", "text": "My team is hiring a Senior Systems Engineer (CUDA + Rust). DM me if you like making GPUs boot faster.", "posted_at": "2026-10-20", "source": "linkedin"}
+  ],
+  "news": [
+    {"url": "https://techwire.example/lattice-compute-eu-regions", "title": "Lattice Compute opens two EU GPU regions for low-latency inference", "published_at": "2026-10-21"}
+  ]
+}

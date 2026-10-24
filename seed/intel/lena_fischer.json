@@ -1,0 +1,7 @@
+{
+  "profile": {"url": "https://www.linkedin.com/in/lena-fischer-demo", "headline": "Co-founder & CTO @ Driftwood AI | voice agents"},
+  "posts": [
+    {"url": "https://www.linkedin.com/posts/lena-fischer-demo_latency-activity-1", "text": "We hit 280ms end-to-end on our voice agent today. The trick was streaming ASR partials straight into the LLM.", "posted_at": "2026-10-23", "source": "linkedin"}
+  ],
+  "news": []
+}

@@ -1,0 +1,9 @@
+{
+  "profile": {"url": "https://www.linkedin.com/in/claire-dubois-demo", "headline": "Partner @ Sable Ventures | AI infrastructure, dev tools"},
+  "posts": [
+    {"url": "https://www.linkedin.com/posts/claire-dubois-demo_inference-activity-1", "text": "Inference is the new cloud bill. We're writing $1-3M seed checks into teams making it cheaper. Pitch me.", "posted_at": "2026-10-22", "source": "linkedin"}
+  ],
+  "news": [
+    {"url": "https://vcnews.example/sable-ventures-fund-iii", "title": "Sable Ventures closes $120M Fund III focused on AI infrastructure", "published_at": "2026-10-18"}
+  ]
+}

@@ -1,4 +1,5 @@
 """Transcript -> SessionExtract (contract). OWNER: Person A."""
+import re
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -15,6 +16,19 @@ class _PersonOut(BaseModel):
     role: str | None
     role_class: Literal["engineer", "recruiter", "founder", "investor", "pm_design", "other"]
     email: str | None
+    linkedin: str | None  # not in the frozen contract; kept in LINKEDIN below and written by the agent store
+
+
+# session_id -> LinkedIn URL said in that conversation (side channel; SessionExtract is frozen)
+LINKEDIN: dict[str, str] = {}
+
+
+def _linkedin_url(handle: str | None) -> str | None:
+    if not handle:
+        return None
+    m = re.search(r"linkedin\.com/in/([A-Za-z0-9\-_%]+)", handle)
+    h = m.group(1) if m else re.sub(r"[^a-z0-9\-]", "", handle.lower().lstrip("@"))
+    return f"https://www.linkedin.com/in/{h}" if h else None
 
 
 class _CompanyOut(BaseModel):
@@ -62,6 +76,7 @@ In both cases return exactly one person (the OTHER person, never {user}) with:
 - summary: one factual sentence.
 - email: only if it was explicitly said; spoken forms like "maya at parallaxlabs dot ai" become maya@parallaxlabs.ai.
   NEVER guess or construct an email. Any unknown field is null.
+- linkedin: the handle or URL only if THEM said it ("find me on LinkedIn, sarahchen" -> "sarahchen"), else null.
 
 TRANSCRIPT:
 {transcript}"""
@@ -70,7 +85,8 @@ MAX_TOPICS = 4
 
 MOCK_EXTRACT = _ExtractOut(
     summary="Met Maya Lindqvist, an ML engineer at Parallax Labs, to talk speculative decoding and CUDA graphs; she offered a referral for their inference engineer role.",
-    person=_PersonOut(name="Maya Lindqvist", role="ML Engineer", role_class="engineer", email="maya@parallaxlabs.ai"),
+    person=_PersonOut(name="Maya Lindqvist", role="ML Engineer", role_class="engineer", email="maya@parallaxlabs.ai",
+                      linkedin="maya-lindqvist-demo"),
     company=_CompanyOut(name="Parallax Labs", domain="parallaxlabs.ai"),
     topics=["speculative decoding", "gpu inference", "cuda"],
     promises=[
@@ -108,12 +124,14 @@ def extract(session_id: str, transcript: str, started_at: str | None = None) -> 
             out.company = None
     if (out.person.name or "").strip().lower() in _JUNK_NAMES:
         raise NoPersonFound("couldn't tell who you met — say their name and try again")
+    if url := _linkedin_url(out.person.linkedin):
+        LINKEDIN[session_id] = url
     return SessionExtract(
         session_id=session_id,
         started_at=started_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
         transcript=transcript,
         summary=out.summary,
-        person=Person(**out.person.model_dump()),
+        person=Person(**out.person.model_dump(exclude={"linkedin"})),
         company=Company(**out.company.model_dump()) if out.company else None,
         topics=list(dict.fromkeys(t.strip().lower() for t in out.topics if t.strip()))[:MAX_TOPICS],
         promises=[Promise(**p.model_dump()) for p in out.promises],
