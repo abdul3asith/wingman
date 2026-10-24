@@ -1,0 +1,14 @@
+{
+  "company": "Helio Health",
+  "domain": "heliohealth.com",
+  "sector": "Health tech",
+  "stage": "Series A",
+  "webdocs": [
+    {"url": "https://heliohealth.com/blog/clinical-eval-rubric", "title": "Evaluating clinical note generation: the rubric our clinicians use", "kind": "blog", "published_at": "2026-07-21", "topics": ["llm evaluation", "clinical documentation"]},
+    {"url": "https://healthwire.example/helio-mercy-regional", "title": "Helio Health partners with Mercy Regional on ambient scribing", "kind": "news", "published_at": "2026-09-05", "topics": ["clinical documentation", "ambient scribing"]},
+    {"url": "https://heliohealth.com", "title": "Helio Health — Ambient clinical documentation", "kind": "site", "published_at": null, "topics": ["clinical documentation", "hipaa compliance"]}
+  ],
+  "jobs": [
+    {"title": "Senior Product Designer", "url": "https://heliohealth.com/careers/senior-product-designer", "req_id": "HH-23", "skills": ["Figma", "Healthcare UX"]}
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "session_id": "s_quillon_diego",
+  "started_at": "2026-10-23T15:45:00Z",
+  "transcript": "Last one for today, Diego Alvarez, founding engineer at Quillon, LLM observability. We talked tracing, they're all in on OpenTelemetry, and their Python SDK. He's going to send me an early access invite. Email diego at quillon dot dev.",
+  "summary": "Met Diego Alvarez, founding engineer at Quillon (LLM observability). Discussed OpenTelemetry-based tracing and their Python SDK; he'll send an early access invite.",
+  "person": {"name": "Diego Alvarez", "role": "Founding Engineer", "role_class": "engineer", "email": "diego@quillon.dev"},
+  "company": {"name": "Quillon", "domain": "quillon.dev"},
+  "topics": ["llm observability", "tracing", "opentelemetry", "python"],
+  "promises": [
+    {"by": "them", "text": "Send early access invite"}
+  ]
+}

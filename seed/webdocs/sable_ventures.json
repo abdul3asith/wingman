@@ -1,0 +1,12 @@
+{
+  "company": "Sable Ventures",
+  "domain": "sable.vc",
+  "sector": "Venture capital",
+  "stage": null,
+  "webdocs": [
+    {"url": "https://sable.vc/writing/inference-layer", "title": "Why we're betting on the inference layer", "kind": "blog", "published_at": "2026-09-10", "topics": ["ai infrastructure", "gpu inference"]},
+    {"url": "https://sable.vc/writing/devtools-agents", "title": "Developer tools in the age of agents", "kind": "blog", "published_at": "2026-05-22", "topics": ["developer tools", "agents"]},
+    {"url": "https://sable.vc", "title": "Sable Ventures — Early-stage infrastructure investors", "kind": "site", "published_at": null, "topics": ["ai infrastructure"]}
+  ],
+  "jobs": []
+}

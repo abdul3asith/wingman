@@ -1,0 +1,13 @@
+{
+  "session_id": "s_lattice_priya",
+  "started_at": "2026-10-22T10:40:00Z",
+  "transcript": "Okay so I just talked to Priya Natarajan, she's a staff engineer at Lattice Compute, the serverless GPU inference folks. We got deep into cold starts, she said they snapshot the CUDA context and restore it which is how they got cold starts way down. We also talked about int4 quantization and whether the accuracy cliff is real. She's going to send me their cold start blog post and I said I'd share my CUDA kernel benchmark repo. Her email is priya at latticecompute dot ai.",
+  "summary": "Met Priya Natarajan, staff engineer at Lattice Compute. Deep technical chat on GPU cold starts, CUDA context snapshotting and int4 quantization.",
+  "person": {"name": "Priya Natarajan", "role": "Staff Engineer", "role_class": "engineer", "email": "priya@latticecompute.ai"},
+  "company": {"name": "Lattice Compute", "domain": "latticecompute.ai"},
+  "topics": ["gpu inference", "cold starts", "cuda", "quantization"],
+  "promises": [
+    {"by": "them", "text": "Send the cold start blog post"},
+    {"by": "me", "text": "Share my CUDA kernel benchmark repo"}
+  ]
+}

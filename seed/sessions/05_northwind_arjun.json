@@ -1,0 +1,12 @@
+{
+  "session_id": "s_northwind_arjun",
+  "started_at": "2026-10-23T09:50:00Z",
+  "transcript": "Met Arjun Mehta, perception engineer at Northwind Robotics, warehouse robots. We talked about running 3D perception on the edge with TensorRT, he's fighting int8 calibration drift on their lidar models, lots of CUDA talk. I said I'd send him my TensorRT int8 notes. No email, he said ping him on GitHub.",
+  "summary": "Met Arjun Mehta, perception engineer at Northwind Robotics. Talked edge inference with TensorRT, int8 calibration and CUDA; promised to send my TensorRT int8 notes.",
+  "person": {"name": "Arjun Mehta", "role": "Perception Engineer", "role_class": "engineer", "email": null},
+  "company": {"name": "Northwind Robotics", "domain": "northwindrobotics.com"},
+  "topics": ["cuda", "edge inference", "3d perception", "tensorrt"],
+  "promises": [
+    {"by": "me", "text": "Send my TensorRT int8 notes"}
+  ]
+}

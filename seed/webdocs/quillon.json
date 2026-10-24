@@ -1,0 +1,14 @@
+{
+  "company": "Quillon",
+  "domain": "quillon.dev",
+  "sector": "Developer tools",
+  "stage": "Seed",
+  "webdocs": [
+    {"url": "https://quillon.dev/blog/otel-llm-tracing", "title": "Tracing LLM apps with OpenTelemetry", "kind": "blog", "published_at": "2026-09-18", "topics": ["llm observability", "tracing", "opentelemetry"]},
+    {"url": "https://github.com/quillon-dev/quillon-python", "title": "quillon-dev/quillon-python: Python SDK for Quillon", "kind": "repo", "published_at": "2026-08-30", "topics": ["python", "llm observability"]},
+    {"url": "https://quillon.dev", "title": "Quillon — Observability for LLM apps", "kind": "site", "published_at": null, "topics": ["llm observability"]}
+  ],
+  "jobs": [
+    {"title": "Founding Engineer, Backend", "url": "https://quillon.dev/careers/founding-engineer-backend", "req_id": null, "skills": ["Python", "TypeScript", "PostgreSQL"]}
+  ]
+}

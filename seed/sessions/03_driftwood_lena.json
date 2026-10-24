@@ -1,0 +1,13 @@
+{
+  "session_id": "s_driftwood_lena",
+  "started_at": "2026-10-22T14:05:00Z",
+  "transcript": "Just had coffee with Lena Fischer, co-founder and CTO at Driftwood AI, they build voice agents. We talked a lot about speech to text latency and streaming ASR, she's obsessed with getting under 300 milliseconds end to end, and we compared notes on batching for LLM inference. She offered to intro me to their head of engineering and I said I'd send her the deck. Didn't get her email, she said to find her on LinkedIn.",
+  "summary": "Coffee with Lena Fischer, co-founder/CTO of Driftwood AI (voice agents). Discussed sub-300ms streaming ASR and inference batching; she offered an intro to her head of engineering.",
+  "person": {"name": "Lena Fischer", "role": "Co-founder & CTO", "role_class": "founder", "email": null},
+  "company": {"name": "Driftwood AI", "domain": "driftwood.ai"},
+  "topics": ["voice agents", "speech to text latency", "streaming asr", "llm inference"],
+  "promises": [
+    {"by": "them", "text": "Intro to their head of engineering"},
+    {"by": "me", "text": "Send the deck"}
+  ]
+}

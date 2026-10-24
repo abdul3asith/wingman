@@ -1,0 +1,13 @@
+{
+  "session_id": "s_sable_claire",
+  "started_at": "2026-10-23T12:20:00Z",
+  "transcript": "Spoke with Claire Dubois, partner at Sable Ventures. She's spending a lot of time on AI infrastructure, specifically the inference layer, and developer tools. She asked what I thought about GPU inference getting commoditized. She'd like to see the deck and offered an intro to one of her portfolio founders. Email claire at sable dot vc.",
+  "summary": "Met Claire Dubois, partner at Sable Ventures. Discussed AI infra, the inference layer and developer tools; she asked for the deck and offered a portfolio founder intro.",
+  "person": {"name": "Claire Dubois", "role": "Partner", "role_class": "investor", "email": "claire@sable.vc"},
+  "company": {"name": "Sable Ventures", "domain": "sable.vc"},
+  "topics": ["ai infrastructure", "gpu inference", "developer tools"],
+  "promises": [
+    {"by": "me", "text": "Send the deck"},
+    {"by": "them", "text": "Intro to a portfolio founder"}
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "session_id": "s_helio_sam",
+  "started_at": "2026-10-22T16:30:00Z",
+  "transcript": "Talked with Sam Reyes, head of product at Helio Health, they do ambient clinical documentation. Mostly product stuff, how they evaluate LLM output quality for clinical notes, they have a rubric clinicians fill in, and the HIPAA side of running models. Sam said they'd share the eval rubric. Email is sam dot reyes at heliohealth dot com.",
+  "summary": "Met Sam Reyes, head of product at Helio Health. Discussed LLM evaluation for clinical documentation and HIPAA constraints; Sam offered to share their eval rubric.",
+  "person": {"name": "Sam Reyes", "role": "Head of Product", "role_class": "pm_design", "email": "sam.reyes@heliohealth.com"},
+  "company": {"name": "Helio Health", "domain": "heliohealth.com"},
+  "topics": ["clinical documentation", "llm evaluation", "hipaa compliance"],
+  "promises": [
+    {"by": "them", "text": "Share their eval rubric"}
+  ]
+}

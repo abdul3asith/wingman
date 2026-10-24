@@ -1,0 +1,12 @@
+{
+  "session_id": "s_lattice_tom",
+  "started_at": "2026-10-22T11:15:00Z",
+  "transcript": "Quick one, met Tom Okafor at the Lattice Compute booth, he's a technical recruiter there. He said the inference team is hiring senior systems engineers, mostly CUDA and Python, and they're remote friendly. He asked me to send my resume by Friday and mentioned the req ID is LC-142. His email is tom at latticecompute dot ai.",
+  "summary": "Met Tom Okafor, technical recruiter at Lattice Compute. Inference team hiring CUDA/Python systems engineers; asked for my resume by Friday (req LC-142).",
+  "person": {"name": "Tom Okafor", "role": "Technical Recruiter", "role_class": "recruiter", "email": "tom@latticecompute.ai"},
+  "company": {"name": "Lattice Compute", "domain": "latticecompute.ai"},
+  "topics": ["inference team hiring", "cuda", "remote work"],
+  "promises": [
+    {"by": "me", "text": "Send resume by Friday"}
+  ]
+}

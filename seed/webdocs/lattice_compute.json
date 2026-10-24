@@ -1,0 +1,18 @@
+{
+  "company": "Lattice Compute",
+  "domain": "latticecompute.ai",
+  "sector": "AI infrastructure",
+  "stage": "Series B",
+  "webdocs": [
+    {"url": "https://latticecompute.ai/blog/cold-starts", "title": "How we cut cold starts for LLM inference by 80%", "kind": "blog", "published_at": "2026-09-14", "topics": ["cold starts", "gpu inference", "serverless gpus", "cuda"]},
+    {"url": "https://latticecompute.ai/blog/int4-quantization", "title": "Int4 quantization without the accuracy cliff", "kind": "blog", "published_at": "2026-08-02", "topics": ["quantization", "gpu inference"]},
+    {"url": "https://github.com/lattice-compute/fastkernels", "title": "lattice-compute/fastkernels: hand-tuned CUDA and Triton kernels for serving", "kind": "repo", "published_at": "2026-07-19", "topics": ["cuda", "triton", "kernels"]},
+    {"url": "https://techwire.example/lattice-compute-series-b", "title": "Lattice Compute raises $40M Series B to scale serverless GPU inference", "kind": "news", "published_at": "2026-06-10", "topics": ["ai infrastructure", "funding"]},
+    {"url": "https://latticecompute.ai/careers/senior-systems-engineer-inference", "title": "Senior Systems Engineer, Inference — Lattice Compute Careers", "kind": "job", "published_at": "2026-10-01", "topics": ["cuda", "gpu inference", "inference team hiring"]},
+    {"url": "https://latticecompute.ai", "title": "Lattice Compute — Serverless GPU inference", "kind": "site", "published_at": null, "topics": ["serverless gpus", "gpu inference"]}
+  ],
+  "jobs": [
+    {"title": "Senior Systems Engineer, Inference", "url": "https://latticecompute.ai/careers/senior-systems-engineer-inference", "req_id": "LC-142", "skills": ["CUDA", "Python", "Rust"]},
+    {"title": "ML Platform Engineer", "url": "https://latticecompute.ai/careers/ml-platform-engineer", "req_id": "LC-151", "skills": ["Python", "Kubernetes", "LLM inference"]}
+  ]
+}

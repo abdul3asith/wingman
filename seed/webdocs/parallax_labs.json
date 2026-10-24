@@ -1,0 +1,15 @@
+{
+  "company": "Parallax Labs",
+  "domain": "parallaxlabs.ai",
+  "sector": "AI infrastructure",
+  "stage": "Series A",
+  "webdocs": [
+    {"url": "https://parallaxlabs.ai/blog/speculative-decoding", "title": "Speculative decoding in production: 2.1x on real traffic", "kind": "blog", "published_at": "2026-10-02", "topics": ["speculative decoding", "llm inference", "gpu inference"]},
+    {"url": "https://github.com/parallax-labs/specdec", "title": "parallax-labs/specdec: draft-model speculative decoding with CUDA graphs", "kind": "repo", "published_at": "2026-09-12", "topics": ["speculative decoding", "cuda"]},
+    {"url": "https://parallaxlabs.ai/careers/inference-engineer", "title": "Inference Engineer — Parallax Labs", "kind": "job", "published_at": "2026-10-05", "topics": ["gpu inference", "cuda"]},
+    {"url": "https://parallaxlabs.ai", "title": "Parallax Labs — Faster LLM serving", "kind": "site", "published_at": null, "topics": ["llm inference"]}
+  ],
+  "jobs": [
+    {"title": "Inference Engineer", "url": "https://parallaxlabs.ai/careers/inference-engineer", "req_id": "PL-09", "skills": ["CUDA", "Python", "LLM inference"]}
+  ]
+}

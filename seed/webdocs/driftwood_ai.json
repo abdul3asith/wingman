@@ -1,0 +1,14 @@
+{
+  "company": "Driftwood AI",
+  "domain": "driftwood.ai",
+  "sector": "Applied AI",
+  "stage": "Seed",
+  "webdocs": [
+    {"url": "https://driftwood.ai/blog/streaming-asr", "title": "Sub-300ms voice agents: our streaming ASR pipeline", "kind": "blog", "published_at": "2026-09-30", "topics": ["streaming asr", "voice agents", "speech to text latency"]},
+    {"url": "https://github.com/driftwood-ai/turnkit", "title": "driftwood-ai/turnkit: end-of-turn detection for voice agents", "kind": "repo", "published_at": "2026-08-11", "topics": ["voice agents", "turn detection"]},
+    {"url": "https://driftwood.ai", "title": "Driftwood AI — Voice agents that feel human", "kind": "site", "published_at": null, "topics": ["voice agents"]}
+  ],
+  "jobs": [
+    {"title": "Founding ML Engineer", "url": "https://driftwood.ai/careers/founding-ml-engineer", "req_id": null, "skills": ["Python", "LLM inference", "PyTorch"]}
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "company": "Northwind Robotics",
+  "domain": "northwindrobotics.com",
+  "sector": "Robotics",
+  "stage": "Series C",
+  "webdocs": [
+    {"url": "https://northwindrobotics.com/engineering/edge-perception-tensorrt", "title": "Running 3D perception at the edge with TensorRT", "kind": "blog", "published_at": "2026-08-19", "topics": ["edge inference", "tensorrt", "3d perception", "cuda"]},
+    {"url": "https://northwindrobotics.com/careers/perception-engineer-edge-inference", "title": "Perception Engineer, Edge Inference — Northwind Robotics", "kind": "job", "published_at": "2026-09-28", "topics": ["cuda", "tensorrt"]},
+    {"url": "https://roboticsdaily.example/northwind-1000th-robot", "title": "Northwind deploys its 1,000th warehouse robot", "kind": "news", "published_at": "2026-10-01", "topics": ["warehouse automation"]}
+  ],
+  "jobs": [
+    {"title": "Perception Engineer, Edge Inference", "url": "https://northwindrobotics.com/careers/perception-engineer-edge-inference", "req_id": "NW-77", "skills": ["C++", "CUDA", "TensorRT"]}
+  ]
+}

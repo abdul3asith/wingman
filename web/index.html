@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wingman</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  .tab-active { @apply border-indigo-500 text-indigo-600; }
+  pre { white-space: pre-wrap; }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+<header class="bg-white border-b">
+  <div class="max-w-5xl mx-auto px-4 py-3 flex items-center gap-4">
+    <h1 class="text-xl font-bold tracking-tight">wingman</h1>
+    <span class="text-sm text-slate-500">voice debrief → graph → follow-ups that open with common ground</span>
+    <span id="mockBadge" class="ml-auto hidden text-xs px-2 py-1 rounded bg-amber-100 text-amber-800">MOCK MODE</span>
+    <span id="graphBadge" class="hidden text-xs px-2 py-1 rounded bg-red-100 text-red-800">FalkorDB down — run make up</span>
+  </div>
+  <nav class="max-w-5xl mx-auto px-4 flex gap-6 text-sm">
+    <button data-tab="record" class="tab py-2 border-b-2 border-transparent">Record</button>
+    <button data-tab="people" class="tab py-2 border-b-2 border-transparent">People &amp; Common Ground</button>
+    <button data-tab="queue" class="tab py-2 border-b-2 border-transparent">Queue <span id="queueCount" class="ml-1 text-xs bg-indigo-100 text-indigo-700 rounded-full px-2"></span></button>
+    <button data-tab="graph" class="tab py-2 border-b-2 border-transparent">Graph</button>
+  </nav>
+</header>
+
+<main class="max-w-5xl mx-auto px-4 py-6">
+
+  <!-- RECORD -->
+  <section id="tab-record" class="tab-panel space-y-4">
+    <div class="bg-white rounded-lg border p-4 space-y-3">
+      <h2 class="font-semibold">Debrief a conversation</h2>
+      <div class="flex items-center gap-3">
+        <button id="recBtn" class="px-4 py-2 rounded bg-red-600 text-white">● Record</button>
+        <span id="recStatus" class="text-sm text-slate-500">30–60 seconds: who, role, company, what you talked about, what you each promised.</span>
+      </div>
+      <details><summary class="text-sm text-slate-500 cursor-pointer">…or paste a transcript instead</summary>
+        <textarea id="transcript" rows="4" class="mt-2 w-full border rounded p-2 text-sm" placeholder="Just talked to Maya Lindqvist, ML engineer at Parallax Labs..."></textarea>
+      </details>
+      <button id="processBtn" class="px-4 py-2 rounded bg-indigo-600 text-white disabled:opacity-40" disabled>Process</button>
+    </div>
+    <div id="extractCard" class="hidden bg-white rounded-lg border p-4 space-y-2"></div>
+  </section>
+
+  <!-- PEOPLE -->
+  <section id="tab-people" class="tab-panel hidden space-y-6">
+    <div class="flex items-center gap-3">
+      <h2 class="font-semibold">Common Ground</h2>
+      <span class="text-sm text-slate-500">topics you discussed that the company has published about</span>
+      <button id="genAllBtn" class="ml-auto px-3 py-1.5 rounded bg-indigo-600 text-white text-sm">Generate all follow-ups</button>
+    </div>
+    <div id="peopleList" class="grid md:grid-cols-2 gap-4"></div>
+    <h2 class="font-semibold pt-2">Referral radar</h2>
+    <p class="text-sm text-slate-500">engineers you met at companies hiring for your skills</p>
+    <div id="radar" class="bg-white rounded-lg border divide-y text-sm"></div>
+  </section>
+
+  <!-- QUEUE -->
+  <section id="tab-queue" class="tab-panel hidden space-y-4">
+    <div class="flex items-center gap-3">
+      <h2 class="font-semibold">Approval queue</h2>
+      <select id="queueFilter" class="text-sm border rounded px-2 py-1"><option value="pending">pending</option><option value="sent">sent</option><option value="skipped">skipped</option><option value="all">all</option></select>
+    </div>
+    <div id="queue" class="space-y-4"></div>
+  </section>
+
+  <!-- GRAPH -->
+  <section id="tab-graph" class="tab-panel hidden space-y-4">
+    <div class="flex items-center gap-3 flex-wrap">
+      <h2 class="font-semibold">Graph presets</h2>
+      <span class="text-sm text-slate-500">FalkorDB browser: <a class="text-indigo-600 underline" href="http://localhost:3000" target="_blank">localhost:3000</a></span>
+      <span id="stats" class="ml-auto text-xs text-slate-500"></span>
+    </div>
+    <div id="presets" class="flex flex-wrap gap-2"></div>
+    <pre id="presetCypher" class="text-xs bg-slate-900 text-slate-100 rounded p-3 hidden"></pre>
+    <div id="presetOut" class="bg-white rounded-lg border overflow-auto"></div>
+  </section>
+</main>
+
+<!-- WHY modal -->
+<div id="whyModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center p-4" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="bg-white rounded-lg max-w-2xl w-full p-5 space-y-3 max-h-[80vh] overflow-auto">
+    <div class="flex items-center"><h3 class="font-semibold">Why this draft?</h3><button class="ml-auto text-slate-400" onclick="document.getElementById('whyModal').classList.add('hidden')">✕</button></div>
+    <ol id="whyHops" class="list-decimal pl-5 space-y-1 text-sm"></ol>
+    <div id="whyGraph" class="text-xs text-slate-500 font-mono"></div>
+  </div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const api = async (path, opts = {}) => {
+  const res = await fetch(path, opts);
+  if (!res.ok) { const t = await res.text(); throw new Error(`${res.status} ${t.slice(0, 300)}`); }
+  return res.json();
+};
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const chip = (t, cls = 'bg-slate-100 text-slate-700') => `<span class="inline-block text-xs px-2 py-0.5 rounded ${cls} mr-1 mb-1">${esc(t)}</span>`;
+
+// ---------- tabs
+document.querySelectorAll('.tab').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('tab-active', b.dataset.tab === name));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('hidden', p.id !== 'tab-' + name));
+  ({ people: loadPeople, queue: loadQueue, graph: loadGraph })[name]?.();
+}
+
+// ---------- health
+api('/health').then(h => {
+  $('#mockBadge').classList.toggle('hidden', !h.mock_mode);
+  $('#graphBadge').classList.toggle('hidden', h.graph_status === 'ok');
+}).catch(() => $('#graphBadge').classList.remove('hidden'));
+
+// ---------- record
+let recorder, chunks = [], blob = null;
+$('#recBtn').onclick = async () => {
+  if (recorder && recorder.state === 'recording') { recorder.stop(); return; }
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  recorder = new MediaRecorder(stream); chunks = [];
+  recorder.ondataavailable = e => chunks.push(e.data);
+  recorder.onstop = () => { blob = new Blob(chunks, { type: 'audio/webm' }); stream.getTracks().forEach(t => t.stop());
+    $('#recBtn').textContent = '● Record again'; $('#recStatus').textContent = `Captured ${(blob.size/1024).toFixed(0)} KB. Hit Process.`; $('#processBtn').disabled = false; };
+  recorder.start(); $('#recBtn').textContent = '■ Stop'; $('#recStatus').textContent = 'Recording…';
+};
+$('#transcript').oninput = () => $('#processBtn').disabled = !($('#transcript').value.trim() || blob);
+$('#processBtn').onclick = async () => {
+  const btn = $('#processBtn'); btn.disabled = true; btn.textContent = 'Transcribing & extracting…';
+  try {
+    const fd = new FormData();
+    if ($('#transcript').value.trim()) fd.append('transcript', $('#transcript').value.trim()); else fd.append('audio', blob, 'debrief.webm');
+    const { session_id } = await api('/sessions', { method: 'POST', body: fd });
+    btn.textContent = 'Enriching company…';
+    const x = await api(`/sessions/${session_id}/process?sync_enrich=true`, { method: 'POST' });
+    renderExtract(x);
+  } catch (e) { alert(e.message); }
+  btn.disabled = false; btn.textContent = 'Process';
+};
+function renderExtract(x) {
+  const card = $('#extractCard'); card.classList.remove('hidden');
+  card.innerHTML = `
+    <div class="flex items-baseline gap-2"><h3 class="font-semibold text-lg">${esc(x.person.name)}</h3>
+      <span class="text-slate-500">${esc(x.person.role || '')} ${x.company ? '@ ' + esc(x.company.name) : ''}</span>${chip(x.person.role_class, 'bg-indigo-100 text-indigo-700')}</div>
+    <p class="text-sm">${esc(x.summary)}</p>
+    <div>${x.topics.map(t => chip(t)).join('')}</div>
+    <ul class="text-sm list-disc pl-5">${x.promises.map(p => `<li><b>${p.by === 'me' ? 'I' : 'They'}</b> promised: ${esc(p.text)}</li>`).join('')}</ul>
+    <details class="text-xs text-slate-500"><summary class="cursor-pointer">transcript</summary><pre class="mt-1">${esc(x.transcript)}</pre></details>
+    <div class="flex gap-2 pt-2">
+      <button class="px-3 py-1.5 rounded bg-indigo-600 text-white text-sm" onclick="generateFor(${JSON.stringify(x.person.name)})">Generate follow-up</button>
+      <button class="px-3 py-1.5 rounded border text-sm" onclick="showTab('people')">See common ground</button>
+    </div>`;
+}
+async function generateFor(person) {
+  try { await api('/asks/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ person }) }); showTab('queue'); }
+  catch (e) { alert(e.message); }
+}
+
+// ---------- people
+async function loadPeople() {
+  const [people, cg, radar] = await Promise.all([api('/graph/people'), api('/graph/common-ground'), api('/graph/referral-radar')]);
+  $('#peopleList').innerHTML = people.map(p => {
+    const rows = cg.filter(c => c.person === p.name);
+    return `<div class="bg-white rounded-lg border p-4 space-y-2">
+      <div class="flex items-baseline gap-2"><b>${esc(p.name)}</b><span class="text-sm text-slate-500">${esc(p.role || '')} ${p.company ? '@ ' + esc(p.company) : ''}</span>${chip(p.role_class, 'bg-indigo-100 text-indigo-700')}</div>
+      <div>${p.topics.map(t => chip(t)).join('')}</div>
+      ${rows.length ? `<ul class="text-sm space-y-1">${rows.map(c => `<li>🤝 <b>${esc(c.topic)}</b> → <a class="text-indigo-600 underline" target="_blank" href="${esc(c.doc_url)}">${esc(c.doc_title)}</a> <span class="text-xs text-slate-400">${esc(c.doc_kind)}</span></li>`).join('')}</ul>`
+                  : `<p class="text-sm text-slate-400">no common ground yet${p.company ? ` — <button class="underline" onclick="enrich(${JSON.stringify(p.company)}, ${JSON.stringify(p.domain)})">enrich ${esc(p.company)}</button>` : ''}</p>`}
+      <button class="text-sm text-indigo-600 underline" onclick="generateFor(${JSON.stringify(p.name)})">Generate follow-up</button>
+    </div>`;
+  }).join('') || '<p class="text-slate-500">No people yet. Record a debrief or run <code>make seed</code>.</p>';
+  $('#radar').innerHTML = radar.map(r => `<div class="p-3 flex flex-wrap gap-2 items-center"><b>${esc(r.person)}</b><span class="text-slate-500">@ ${esc(r.company)}</span>
+      <span>→ <a class="text-indigo-600 underline" target="_blank" href="${esc(r.job_url)}">${esc(r.job_title)}</a></span><span class="ml-auto">${r.matched_skills.map(s => chip(s, 'bg-green-100 text-green-800')).join('')}</span></div>`).join('')
+    || '<p class="p-3 text-slate-400">No matches yet.</p>';
+}
+async function enrich(company, domain) { try { await api('/graph/enrich', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ company, domain }) }); loadPeople(); } catch (e) { alert(e.message); } }
+$('#genAllBtn').onclick = async () => { $('#genAllBtn').textContent = 'Generating…'; try { await api('/asks/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); showTab('queue'); } catch (e) { alert(e.message); } $('#genAllBtn').textContent = 'Generate all follow-ups'; };
+
+// ---------- queue
+$('#queueFilter').onchange = loadQueue;
+async function loadQueue() {
+  const status = $('#queueFilter').value;
+  const drafts = await api(`/asks/queue?status=${status}`);
+  api('/asks/queue?status=pending').then(p => $('#queueCount').textContent = p.length || '');
+  $('#queue').innerHTML = drafts.map(d => `<div class="bg-white rounded-lg border p-4 space-y-2">
+      <div class="flex items-center gap-2 flex-wrap"><b>${esc(d.person)}</b><span class="text-sm text-slate-500">${esc(d.email || 'no email')}</span>${chip(d.ask_type, 'bg-indigo-100 text-indigo-700')}${chip(d.status, d.status === 'sent' ? 'bg-green-100 text-green-800' : 'bg-slate-100')}
+        <button class="ml-auto text-sm text-indigo-600 underline" onclick="why('${esc(d.id)}')">why?</button></div>
+      <div class="text-sm"><b>Subject:</b> ${esc(d.subject)}</div>
+      <pre class="text-sm bg-slate-50 rounded p-3">${esc(d.body)}</pre>
+      <div class="text-xs text-slate-500">because: ${d.because.map(b => chip(b)).join('')}</div>
+      ${d.status === 'pending' ? `<div class="flex gap-2"><button class="px-3 py-1.5 rounded bg-green-600 text-white text-sm" onclick="act('${esc(d.id)}','approve')">Approve &amp; send</button>
+        <button class="px-3 py-1.5 rounded border text-sm" onclick="act('${esc(d.id)}','skip')">Skip</button></div>` : ''}
+    </div>`).join('') || '<p class="text-slate-500">Queue is empty. Generate follow-ups from the People tab.</p>';
+}
+async function act(id, action) { try { await api(`/asks/${id}/${action}`, { method: 'POST' }); loadQueue(); } catch (e) { alert(e.message); } }
+async function why(id) {
+  const w = await api(`/graph/why/${id}`);
+  $('#whyHops').innerHTML = w.hops.map(h => `<li>${esc(h).replace(/\((https?:[^)]+)\)/g, '(<a class="text-indigo-600 underline" target="_blank" href="$1">$1</a>)')}</li>`).join('');
+  $('#whyGraph').innerHTML = w.edges.map(e => `${esc(e.from)} -[${esc(e.type)}]-> ${esc(e.to)}`).join('<br>');
+  $('#whyModal').classList.remove('hidden');
+}
+
+// ---------- graph
+async function loadGraph() {
+  const [presets, stats] = await Promise.all([api('/graph/presets'), api('/graph/stats')]);
+  $('#stats').textContent = Object.entries(stats).map(([k, v]) => `${k}:${v}`).join('  ');
+  $('#presets').innerHTML = presets.map(p => `<button class="px-3 py-1.5 rounded border bg-white text-sm hover:border-indigo-400" title="${esc(p.description)}" onclick='runPreset(${JSON.stringify(p)})'>${esc(p.name)}</button>`).join('');
+}
+async function runPreset(p) {
+  $('#presetCypher').classList.remove('hidden'); $('#presetCypher').textContent = p.cypher;
+  const rows = await api(`/graph/query/${p.name}`, { method: 'POST' });
+  if (!rows.length) { $('#presetOut').innerHTML = '<p class="p-3 text-slate-400">0 rows</p>'; return; }
+  const cols = Object.keys(rows[0]);
+  $('#presetOut').innerHTML = `<table class="text-sm w-full"><thead class="bg-slate-100"><tr>${cols.map(c => `<th class="text-left p-2">${esc(c)}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r => `<tr class="border-t">${cols.map(c => `<td class="p-2 align-top">${esc(Array.isArray(r[c]) ? r[c].join(', ') : r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+}
+
+showTab('record');
+</script>
+</body>
+</html>
