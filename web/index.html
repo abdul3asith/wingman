@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Figtree:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/motion@11.11.13/dist/motion.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.9/standalone/umd/vis-network.min.js"></script>
 <style>
 /* Layout: sticky voice stage on the left (the one button), a live feed of what the agent did on the right. */
 :root {
@@ -143,6 +144,10 @@ canvas#orb { width: 100%; height: 100%; display: block; }
 .chain .node small { font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-right: 6px; }
 
 .empty { color: var(--muted); display: grid; gap: 10px; }
+.graph-canvas { height: 480px; border-radius: 12px; background: var(--ink); border: 1px solid var(--line); }
+.graph-legend { display: flex; flex-wrap: wrap; gap: 12px; font: 500 12px var(--mono); color: var(--muted); margin-top: 10px; }
+.graph-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+pre.cypher { font: 12px/1.5 var(--mono); background: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 12px; overflow-x: auto; color: var(--graph); white-space: pre; }
 .empty ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
 .err { border-color: color-mix(in oklab, var(--bad) 50%, var(--line)); }
 @media (prefers-reduced-motion: reduce) { .scan, .rec-btn.live i { animation: none; } }
@@ -157,6 +162,7 @@ canvas#orb { width: 100%; height: 100%; display: block; }
     <span class="pill" id="stGraph"><b></b>Graph</span>
     <span class="pill web" id="stWeb"><b></b>Live web</span>
     <span class="pill" id="stMode"><b></b>Mode</span>
+    <button class="pill" data-graphview="overview" title="Draw the live FalkorDB graph" style="color:var(--fg);border-color:var(--graph)">◉ Open graph</button>
   </div>
 </header>
 
@@ -357,7 +363,7 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => { if (e.code === 'Space' && spaceDown) { spaceDown = false; stopListening(); } });
 $('#typeForm').onsubmit = (e) => { e.preventDefault(); const v = $('#typeInput').value.trim(); if (!v) return; $('#typeInput').value = ''; showHeard(v); send(v); };
 
-const SUGGEST = ['Who should I follow up with?', 'Research the investors', 'Any warm intros?', 'Draft follow-ups for the investors', 'Schedule them for Monday 9am'];
+const SUGGEST = ['Who should I follow up with?', 'Research the investors', 'Any warm intros?', 'Show me the warm intro graph', 'Draft follow-ups for the investors', 'Schedule them for Monday 9am'];
 $('#chips').innerHTML = SUGGEST.map(s => `<button class="chip-btn" data-say="${esc(s)}">${esc(s)}</button>`).join('');
 
 // ---------------------------------------------------------------- recording a real conversation
@@ -502,6 +508,52 @@ function chainBlock(w) {
   }).join('')}</ol>`;
 }
 
+// ---------------------------------------------------------------- live FalkorDB graph (vis-network)
+const GRAPH_KINDS = {
+  You: ['--voice', 26], Person: ['--voice', 18], Company: ['--graph', 20], Portfolio: ['--web', 13], Goal: ['--ok', 16],
+  Fact: ['--graph', 10], Topic: ['--muted', 10], WebDoc: ['--web', 10],
+};
+const VIEW_TITLES = { overview: 'Everyone you met', warm_intros: 'Warm intros: who backs whom', person: '' };
+
+function graphCard(g) {
+  const title = g.view === 'person' ? `${g.person}: everything Wingman knows` : VIEW_TITLES[g.view] || 'Graph';
+  const kinds = [...new Set(g.nodes.map(n => n.kind))];
+  const el = addCard(`<div class="card-h"><span class="kind graph">FalkorDB · live graph</span><h3>${esc(title)}</h3>
+      <span class="muted mono">${g.nodes.length} nodes · ${g.edges.length} edges</span></div>
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn" data-graphview="overview">Everyone</button><button class="btn" data-graphview="warm_intros">Warm intros</button>
+      <span class="muted" style="font-size:13px">double-click a person to open their graph</span></div>
+    <div class="graph-canvas"></div>
+    <div class="graph-legend">${kinds.map(k => `<span><i style="background:${CSSVAR((GRAPH_KINDS[k] || ['--muted'])[0])}"></i>${esc(k)}</span>`).join('')}</div>
+    <details style="margin-top:10px"><summary class="muted" style="cursor:pointer">Cypher that drew this</summary><pre class="cypher">${esc(g.cypher)}</pre></details>`);
+  const box = $('.graph-canvas', el);
+  if (!window.vis) { box.innerHTML = '<div class="muted" style="padding:16px">Graph library didn’t load (offline?).</div>'; return; }
+  const fg = CSSVAR('--fg'), muted = CSSVAR('--muted'), line = CSSVAR('--line');
+  const nodes = new vis.DataSet(g.nodes.map(n => {
+    const [tok, size] = GRAPH_KINDS[n.kind] || ['--muted', 10]; const c = CSSVAR(tok);
+    const label = n.label.length > 42 ? n.label.slice(0, 40) + '…' : n.label;
+    return { id: n.id, label, title: n.label + (n.url ? '\n' + n.url : ''), size, shape: 'dot', kind: n.kind, name: n.label, url: n.url,
+             color: { background: c, border: c, highlight: { background: c, border: fg } },
+             font: { color: n.kind === 'Topic' || n.kind === 'Fact' ? muted : fg, size: n.kind === 'You' || n.kind === 'Person' ? 15 : 12, face: 'Figtree' } };
+  }));
+  const edges = new vis.DataSet(g.edges.map((e, i) => ({
+    id: i, from: e.from, to: e.to, label: e.type, arrows: { to: { enabled: true, scaleFactor: 0.5 } },
+    color: { color: e.type.startsWith('INVESTED_IN') ? CSSVAR('--web') : line, highlight: fg },
+    font: { color: muted, size: 10, strokeWidth: 0, face: 'IBM Plex Mono' }, width: e.type.startsWith('INVESTED_IN') ? 2 : 1,
+    smooth: { type: 'continuous' },
+  })));
+  const net = new vis.Network(box, { nodes, edges }, {
+    physics: { barnesHut: { gravitationalConstant: -9000, springLength: 140 }, stabilization: { iterations: REDUCED ? 400 : 150 } },
+    interaction: { hover: true, tooltipDelay: 120 },
+  });
+  net.once('stabilizationIterationsDone', () => net.fit({ animation: REDUCED ? false : { duration: 600 } }));
+  net.on('doubleClick', async (p) => {
+    const n = p.nodes.length && nodes.get(p.nodes[0]); if (!n) return;
+    if (n.kind === 'Person') { try { graphCard(await api(`/agent/graph?view=person&name=${encodeURIComponent(n.name)}`)); } catch (e) { say(e.message, false); } }
+    else if (n.url) window.open(n.url, '_blank', 'noopener');
+  });
+}
+
 function renderEvents(events) {
   // collapse repeated common_ground events from one turn into one card
   const cg = events.filter(e => e.type === 'common_ground').flatMap(e => e.rows || []);
@@ -542,6 +594,7 @@ function renderEvent(e) {
         ${e.no_email?.length ? `<div class="muted" style="margin-top:8px">No email for ${esc(e.no_email.join(', '))}; add one on their draft.</div>` : ''}
         <div class="row" style="margin-top:12px"><button class="btn primary" data-say="Yes, go ahead.">Yes, go ahead</button><button class="btn" data-say="No, hold off.">Hold off</button></div>`); break;
     case 'scheduled': addCard(`<div class="card-h"><span class="kind voice">Done</span><h3>${e.sent.length} ${e.send_at ? 'scheduled for ' + esc(fmtTime(e.send_at)) : 'sent'}</h3></div>${e.sent.map(s => `<div class="person"><b>${esc(s.person)}</b><span class="muted">${esc(s.subject)}</span></div>`).join('')}`); refreshState(); break;
+    case 'graph': graphCard(e); break;
     case 'error': addCard(`<div class="muted">${esc(e.message)}</div>`, 'err'); break;
   }
 }
@@ -550,7 +603,11 @@ const fmtTime = (iso) => { try { return new Date(iso).toLocaleString([], { weekd
 // ---------------------------------------------------------------- buttons inside cards
 document.addEventListener('click', async (ev) => {
   const b = ev.target.closest('button'); if (!b) return;
-  if (b.dataset.say) { showHeard(b.dataset.say); send(b.dataset.say); }
+  if (b.dataset.graphview) {
+    try { graphCard(await api(`/agent/graph?view=${b.dataset.graphview}${b.dataset.name ? '&name=' + encodeURIComponent(b.dataset.name) : ''}`)); }
+    catch (e) { say(e.message, false); }
+  }
+  else if (b.dataset.say) { showHeard(b.dataset.say); send(b.dataset.say); }
   else if (b.dataset.approve) {
     const box = b.closest('[data-draft]'); b.disabled = true; b.textContent = 'Sending…';
     try {

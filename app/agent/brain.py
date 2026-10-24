@@ -44,6 +44,9 @@ Rules:
 - Never invent people, posts or emails. If a tool returns an error, say what's missing in one sentence."""
 
 TOOLS = [
+    {"type": "function", "function": {"name": "show_graph", "description": "Draw the live FalkorDB graph on screen: overview (everyone met, companies, goals), warm_intros, or person (one person's full subgraph: company, facts, topics, common ground, portfolio).",
+        "parameters": {"type": "object", "properties": {"view": {"type": "string", "enum": ["overview", "warm_intros", "person"]},
+                                                        "name": {"type": "string"}}, "required": ["view"]}}},
     {"type": "function", "function": {"name": "warm_intros", "description": "Warm-intro paths from the graph: investors/accelerators the user met whose fund backs a company where the user also met someone.",
         "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {"name": "who_did_i_meet", "description": "Everyone the user met, with role, company, topics.",
@@ -98,6 +101,16 @@ def _draft_card(d) -> dict:
 
 
 # ---------------------------------------------------------------- tools
+
+
+def t_show_graph(view: str = "overview", name: str | None = None) -> tuple[dict, dict]:
+    from app.agent import graphview
+
+    who = _resolve([name], None) if name else []
+    g = graphview.view(view, who[0] if who else name)
+    if g.get("error"):
+        return {"error": g["error"]}, {"type": "error", "message": g["error"]}
+    return {"view": g["view"], "nodes": len(g["nodes"]), "edges": len(g["edges"])}, {"type": "graph", **g}
 
 
 def t_warm_intros() -> tuple[dict, dict]:
@@ -188,7 +201,7 @@ def t_schedule_followups(confirmed: bool, names: list[str] | None = None, goal: 
 
 
 DISPATCH = {
-    "warm_intros": t_warm_intros, "who_did_i_meet": t_who_did_i_meet, "group_by_goals": t_group_by_goals,
+    "show_graph": t_show_graph, "warm_intros": t_warm_intros, "who_did_i_meet": t_who_did_i_meet, "group_by_goals": t_group_by_goals,
     "research_people": t_research_people, "common_ground": t_common_ground, "draft_followups": t_draft_followups,
     "explain_draft": t_explain_draft, "schedule_followups": t_schedule_followups,
 }

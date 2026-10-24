@@ -76,6 +76,14 @@ def research(req: ResearchRequest):
     return intel.research(req.name)
 
 
+@router.get("/graph")
+def graph(view: str = "overview", name: str | None = None):
+    """Live FalkorDB graph for the UI's graph card: overview | warm_intros | person (with name)."""
+    from app.agent import graphview
+
+    return graphview.view(view, name)
+
+
 @router.get("/why/{draft_id}")
 def why(draft_id: str):
     """Full 'why this ask?' path: graph why_path + facts, cited post, portfolio links, goal."""
