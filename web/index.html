@@ -127,11 +127,18 @@ $('#transcript').oninput = () => $('#processBtn').disabled = !($('#transcript').
 $('#processBtn').onclick = async () => {
   const btn = $('#processBtn'); btn.disabled = true; btn.textContent = 'Transcribing & extracting…';
   try {
-    const fd = new FormData();
-    if ($('#transcript').value.trim()) fd.append('transcript', $('#transcript').value.trim()); else fd.append('audio', blob, 'debrief.webm');
-    const { session_id } = await api('/sessions', { method: 'POST', body: fd });
-    btn.textContent = 'Enriching company…';
-    const x = await api(`/sessions/${session_id}/process?sync_enrich=true`, { method: 'POST' });
+    const typed = $('#transcript').value.trim();
+    let x;
+    if (typed) {
+      // Demo insurance path: no mic, no transcription.
+      x = await api('/sessions/debrief-text?sync_enrich=true', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: typed }) });
+    } else {
+      const fd = new FormData();
+      fd.append('audio', blob, 'debrief.webm');
+      const { session_id } = await api('/sessions', { method: 'POST', body: fd });
+      btn.textContent = 'Enriching company…';
+      x = await api(`/sessions/${session_id}/process?sync_enrich=true`, { method: 'POST' });
+    }
     renderExtract(x);
   } catch (e) { alert(e.message); }
   btn.disabled = false; btn.textContent = 'Process';

@@ -24,10 +24,10 @@ def client():
     return _client
 
 
-def transcribe(path: str) -> str:
-    """Speech to text with gpt-4o-transcribe."""
+def transcribe(path: str, model: str | None = None) -> str:
+    """Speech to text, gpt-4o-transcribe by default."""
     with open(path, "rb") as f:
-        res = client().audio.transcriptions.create(model=settings.OPENAI_STT_MODEL, file=f)
+        res = client().audio.transcriptions.create(model=model or settings.OPENAI_STT_MODEL, file=f)
     return res.text
 
 

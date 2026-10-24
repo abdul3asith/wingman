@@ -11,7 +11,14 @@ MOCK_TRANSCRIPT = (
 )
 
 
+FALLBACK_MODEL = "whisper-1"
+
+
 def transcribe_file(path: str | None) -> str:
     if settings.MOCK_MODE or not path:
         return MOCK_TRANSCRIPT
-    return llm.transcribe(path)
+    try:
+        return llm.transcribe(path)
+    except Exception as e:
+        print(f"[transcribe] {settings.OPENAI_STT_MODEL} failed ({e}); retrying with {FALLBACK_MODEL}")
+        return llm.transcribe(path, model=FALLBACK_MODEL)

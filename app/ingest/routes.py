@@ -1,14 +1,15 @@
-"""POST /sessions, POST /sessions/{id}/process — OWNER: Person A."""
+"""POST /sessions, POST /sessions/{id}/process, POST /sessions/debrief-text — OWNER: Person A."""
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 
 from app.config import settings
 from app.contract import SessionExtract
-from app.graph import enrich, queries, writes
+from app.graph import queries
 from app.ingest import extract as extract_mod
-from app.ingest import transcribe
+from app.ingest import graph_bridge, transcribe
 
 router = APIRouter(prefix="/sessions", tags=["ingest"])
 
@@ -16,12 +17,40 @@ router = APIRouter(prefix="/sessions", tags=["ingest"])
 _pending: dict[str, dict] = {}
 
 
+class DebriefText(BaseModel):
+    text: str
+
+
+def _new_sid() -> str:
+    return "s_" + uuid4().hex[:8]
+
+
+def _run(sid: str, text: str, background: BackgroundTasks, sync_enrich: bool) -> SessionExtract:
+    """extract -> write to graph -> enrich the company (background unless sync_enrich)."""
+    x = extract_mod.extract(sid, text)
+    graph_bridge.ingest_session(x)
+    if x.company:
+        if sync_enrich:
+            graph_bridge.enrich_company(x.company.name, x.company.domain)
+        else:
+            background.add_task(graph_bridge.enrich_company, x.company.name, x.company.domain)
+    return x
+
+
+@router.post("/debrief-text", response_model=SessionExtract)
+def debrief_text(req: DebriefText, background: BackgroundTasks, sync_enrich: bool = False):
+    """Demo insurance: typed debrief, no mic or transcription needed. Creates and processes in one call."""
+    if not req.text.strip():
+        raise HTTPException(400, "text is empty")
+    return _run(_new_sid(), req.text.strip(), background, sync_enrich)
+
+
 @router.post("")
 async def create_session(audio: UploadFile | None = File(None), transcript: str | None = Form(None)):
     """Upload an audio blob (MediaRecorder webm) OR a raw transcript. Returns the session id."""
     if audio is None and not transcript:
         raise HTTPException(400, "send `audio` (multipart file) or `transcript` (form field)")
-    sid = "s_" + uuid4().hex[:8]
+    sid = _new_sid()
     audio_path = None
     if audio is not None:
         ext = Path(audio.filename or "clip.webm").suffix or ".webm"
@@ -38,14 +67,9 @@ def process_session(sid: str, background: BackgroundTasks, sync_enrich: bool = F
     if pending is None:
         raise HTTPException(404, f"session {sid} not found or already processed")
     text = pending["transcript"] or transcribe.transcribe_file(pending["audio_path"])
-    x = extract_mod.extract(sid, text)
-    writes.ingest_session(settings.USER_ID, x)
-    if x.company:
-        if sync_enrich:
-            enrich.enrich_company(x.company.name, x.company.domain)
-        else:
-            background.add_task(enrich.enrich_company, x.company.name, x.company.domain)
-    return x
+    if not text.strip():
+        raise HTTPException(422, "transcription came back empty — try again or use the typed debrief")
+    return _run(sid, text, background, sync_enrich)
 
 
 @router.get("")
