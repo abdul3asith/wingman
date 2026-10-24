@@ -9,6 +9,7 @@ from app.config import settings
 from app.graph import queries
 from app.ingest import transcribe, transcript_graph
 from app.ingest.deepgram import TranscriptionError
+from app.ingest.turns import to_text
 
 router = APIRouter(prefix="/sessions", tags=["ingest"])
 
@@ -49,7 +50,7 @@ def process_session(sid: str):
     if pending is None:
         raise HTTPException(404, f"session {sid} not found or already processed")
     try:
-        text = pending["transcript"] or transcribe.transcribe_file(pending["audio_path"])
+        text = pending["transcript"] or to_text(transcribe.transcribe_file(pending["audio_path"]))
     except TranscriptionError as e:
         # Keep the upload pending so the user can retry /process.
         raise HTTPException(502, str(e))
