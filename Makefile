@@ -1,4 +1,4 @@
-.PHONY: install up run seed smoke reset-graph down
+.PHONY: install up run seed smoke reset-graph down check-deepgram
 
 PY ?= python3
 
@@ -25,3 +25,6 @@ reset-graph:
 
 down:
 	docker compose down
+
+check-deepgram:
+	$(PY) scripts/check_deepgram.py

@@ -38,20 +38,22 @@ def _content_type(path: str) -> str:
     return _CONTENT_TYPES.get(Path(path).suffix.lower(), "application/octet-stream")
 
 
-def transcribe_prerecorded(path: str, client: httpx.Client | None = None) -> str:
+def transcribe_prerecorded(path: str, client: httpx.Client | None = None, diarize: bool = True) -> str:
     """POST the file's bytes to Deepgram and return a 'Speaker N: ...' transcript.
 
+    diarize=False (the voice agent's push-to-talk: one speaker) returns plain text with no speaker labels.
     `client` is a test seam (httpx.MockTransport); production callers leave it None.
     """
     if not settings.DEEPGRAM_API_KEY:
         raise TranscriptionError("DEEPGRAM_API_KEY is not set")
-    # Deepgram docs: `diarize=true` is deprecated; `diarize_model` enables diarization on its own.
     params = {
         "model": settings.DEEPGRAM_MODEL,
-        "diarize_model": "latest",
         "smart_format": "true",
         "punctuate": "true",
     }
+    if diarize:
+        # Deepgram docs: `diarize=true` is deprecated; `diarize_model` enables diarization on its own.
+        params["diarize_model"] = "latest"
     headers = {"Authorization": f"Token {settings.DEEPGRAM_API_KEY}", "Content-Type": _content_type(path)}
     data = Path(path).read_bytes()
 
@@ -66,7 +68,11 @@ def transcribe_prerecorded(path: str, client: httpx.Client | None = None) -> str
         raise TranscriptionError(f"Deepgram returned {res.status_code}: {res.text[:500]}")
     channels = (res.json().get("results") or {}).get("channels") or []
     alternatives = (channels[0].get("alternatives") if channels else None) or []
+    if not diarize:
+        return ((alternatives[0].get("transcript") if alternatives else None) or "").strip()
     words = (alternatives[0].get("words") if alternatives else None) or []
+    if words and not any("speaker" in w for w in words):
+        print("[deepgram] WARNING: no speaker labels in response; everything will read as Speaker 0")
     return format_words(words)
 
 

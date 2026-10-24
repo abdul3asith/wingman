@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from app import llm
 from app.agent import brain, intel
 from app.config import settings
+from app.ingest import deepgram
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 TTS_MODEL = "gpt-4o-mini-tts"
@@ -24,6 +25,16 @@ class ResearchRequest(BaseModel):
     name: str
 
 
+def _transcribe_command(path: str) -> str:
+    """Push-to-talk is one speaker: Deepgram without diarization when configured (fast), else OpenAI."""
+    if settings.DEEPGRAM_API_KEY:
+        try:
+            return deepgram.transcribe_prerecorded(path, diarize=False)
+        except Exception as e:
+            print(f"[agent] Deepgram failed ({e}); falling back to OpenAI")
+    return llm.transcribe(path).strip()
+
+
 @router.post("/talk")
 async def talk(audio: UploadFile | None = File(None), text: str | None = Form(None), conversation_id: str | None = Form(None)):
     """Push-to-talk: audio (webm from MediaRecorder) or text in -> what we heard, the reply, and UI events."""
@@ -34,7 +45,7 @@ async def talk(audio: UploadFile | None = File(None), text: str | None = Form(No
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
             f.write(await audio.read())
         try:
-            heard = llm.transcribe(f.name).strip()
+            heard = _transcribe_command(f.name)
         except Exception as e:
             raise HTTPException(502, f"couldn't transcribe that: {e}")
         finally:

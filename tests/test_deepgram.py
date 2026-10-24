@@ -84,6 +84,21 @@ def test_transcribe_prerecorded_success(key, wav):
     assert seen["body"] == b"RIFF....WAVEfake"
 
 
+def test_transcribe_prerecorded_without_diarization_returns_plain_text(key, wav):
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["params"] = dict(request.url.params)
+        body = {"results": {"channels": [{"alternatives": [{"transcript": " Who fits my goals? ", "words": []}]}]}}
+        return httpx.Response(200, json=body)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as c:
+        out = deepgram.transcribe_prerecorded(wav, client=c, diarize=False)
+
+    assert out == "Who fits my goals?"
+    assert "diarize_model" not in seen["params"]
+
+
 def test_transcribe_prerecorded_4xx_raises(key, wav):
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(401, json={"err_code": "INVALID_AUTH", "err_msg": "Invalid credentials."})
