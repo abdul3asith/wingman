@@ -40,7 +40,8 @@ async def graph_unavailable(_: Request, exc: GraphUnavailable):
 
 @app.get("/health")
 def health():
-    out = {"ok": True, "mock_mode": settings.MOCK_MODE, "user": settings.USER_NAME, "graph": settings.GRAPH_NAME}
+    out = {"ok": True, "mock_mode": settings.MOCK_MODE, "user": settings.USER_NAME, "graph": settings.GRAPH_NAME,
+           "falkordb_ui": f"http://localhost:{settings.FALKORDB_UI_PORT}"}
     try:
         out["counts"] = queries.stats()
         out["graph_status"] = "ok"

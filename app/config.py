@@ -40,6 +40,7 @@ class Settings:
 
     FALKORDB_HOST: str = _env("FALKORDB_HOST", "localhost")
     FALKORDB_PORT: int = int(_env("FALKORDB_PORT", "6379"))
+    FALKORDB_UI_PORT: int = int((_env("FALKORDB_UI_PORT", "3000") or "3000").split("#")[0].strip())
     GRAPH_NAME: str = _env("GRAPH_NAME", "wingman")
 
     USER_ID: str = _env("USER_ID", "me")

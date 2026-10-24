@@ -35,6 +35,7 @@ def fulfilment_line(promise_text: str) -> str:
     """'Send my CUDA benchmark repo' -> 'As promised, here's my CUDA benchmark repo: <url>'."""
     thing = re.sub(r"^(send|share|forward|email)\s+(over\s+|you\s+|her\s+|him\s+|them\s+)?", "", promise_text.strip(), flags=re.I)
     thing = re.sub(r"\s+(by|before|on|this|next)\s+\w+$", "", thing, flags=re.I).rstrip(".")
+    thing = re.sub(r"\s+to\s+(him|her|them|you|[A-Z]\w+)$", "", thing)  # "the resume to Alex" -> "the resume"
     if not re.match(r"^(my|the|our|a|an)\b", thing, flags=re.I):
         thing = f"my {thing}"
     url = asset_link(promise_text)

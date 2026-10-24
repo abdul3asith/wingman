@@ -87,6 +87,13 @@ def _email_was_said(email: str | None, transcript: str) -> bool:
     return email.split("@")[0].lower().replace(".", " ") in transcript.lower().replace(".", " ")
 
 
+class NoPersonFound(ValueError):
+    """The transcript doesn't say who was met; routes turn this into a 422 instead of writing a junk Person."""
+
+
+_JUNK_NAMES = {"", "null", "none", "unknown", "n/a", "na", "them", "the person", "speaker", "speaker 0", "speaker 1"}
+
+
 def extract(session_id: str, transcript: str, started_at: str | None = None) -> SessionExtract:
     if settings.MOCK_MODE:
         out = MOCK_EXTRACT
@@ -97,6 +104,10 @@ def extract(session_id: str, transcript: str, started_at: str | None = None) -> 
         out = llm.parse(prompt, _ExtractOut)
         if not _email_was_said(out.person.email, transcript):
             out.person.email = None
+        if out.company and out.company.name.strip().lower() in _JUNK_NAMES:
+            out.company = None
+    if (out.person.name or "").strip().lower() in _JUNK_NAMES:
+        raise NoPersonFound("couldn't tell who you met — say their name and try again")
     return SessionExtract(
         session_id=session_id,
         started_at=started_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),

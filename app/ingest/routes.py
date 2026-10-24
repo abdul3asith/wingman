@@ -28,7 +28,10 @@ def _new_sid() -> str:
 
 def _run(sid: str, text: str, background: BackgroundTasks, sync_enrich: bool) -> SessionExtract:
     """extract -> write to graph -> enrich the company (background unless sync_enrich)."""
-    x = extract_mod.extract(sid, text)
+    try:
+        x = extract_mod.extract(sid, text)
+    except extract_mod.NoPersonFound as e:
+        raise HTTPException(422, str(e))
     graph_bridge.ingest_session(x)
     if x.company:
         if sync_enrich:

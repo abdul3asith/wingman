@@ -1,227 +1,334 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>wingman</title>
-<script src="https://cdn.tailwindcss.com"></script>
+<!-- OWNER: Person A. Single page, Tailwind CDN, vanilla JS, no build step. Built for a projector: big, high contrast. -->
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
 <style>
-  .tab-active { @apply border-indigo-500 text-indigo-600; }
-  pre { white-space: pre-wrap; }
+  html { font-size: 17px; }
+  body { background: #0b1020; color: #e8ecf5; }
+  pre { white-space: pre-wrap; font-family: inherit; }
+  .card { background: #131a2e; border: 1px solid #263152; border-radius: 0.75rem; }
+  .muted { color: #9aa6c2; }
+  .chip { display: inline-block; font-size: 0.8rem; padding: 0.1rem 0.55rem; border-radius: 999px; margin: 0 0.25rem 0.25rem 0; background: #1e2847; color: #cdd6ee; }
+  .btn-primary { background: #6d7cff; color: #fff; font-weight: 600; padding: 0.6rem 1.1rem; border-radius: 0.6rem; }
+  .btn-primary:hover { background: #8592ff; }
+  .btn-primary:disabled { opacity: 0.4; }
+  .btn { border: 1px solid #36426b; padding: 0.5rem 0.95rem; border-radius: 0.6rem; color: #dfe5f5; }
+  .btn:hover { border-color: #6d7cff; }
+  a.src { color: #8fb4ff; text-decoration: underline; word-break: break-all; }
+  textarea, input, select { background: #0e1426; border: 1px solid #36426b; border-radius: 0.5rem; color: #e8ecf5; }
+  .tab.active { color: #fff; border-color: #6d7cff; }
+  .spinner { width: 1.1rem; height: 1.1rem; border: 3px solid #36426b; border-top-color: #6d7cff; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .rec-dot { width: 0.8rem; height: 0.8rem; background: #ff4d5e; border-radius: 50%; display: inline-block; animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.3; } }
 </style>
 </head>
-<body class="bg-slate-50 text-slate-800 min-h-screen">
-<header class="bg-white border-b">
-  <div class="max-w-5xl mx-auto px-4 py-3 flex items-center gap-4">
-    <h1 class="text-xl font-bold tracking-tight">wingman</h1>
-    <span class="text-sm text-slate-500">voice debrief → graph → follow-ups that open with common ground</span>
-    <span id="mockBadge" class="ml-auto hidden text-xs px-2 py-1 rounded bg-amber-100 text-amber-800">MOCK MODE</span>
-    <span id="graphBadge" class="hidden text-xs px-2 py-1 rounded bg-red-100 text-red-800">FalkorDB down — run make up</span>
+<body class="min-h-screen pb-16">
+
+<header class="border-b border-[#263152]">
+  <div class="max-w-6xl mx-auto px-4 pt-4 flex items-baseline gap-4 flex-wrap">
+    <h1 class="text-2xl font-bold tracking-tight">wingman</h1>
+    <span class="muted">voice debrief → graph → follow-ups that open with common ground</span>
   </div>
-  <nav class="max-w-5xl mx-auto px-4 flex gap-6 text-sm">
-    <button data-tab="record" class="tab py-2 border-b-2 border-transparent">Record</button>
-    <button data-tab="people" class="tab py-2 border-b-2 border-transparent">People &amp; Common Ground</button>
-    <button data-tab="queue" class="tab py-2 border-b-2 border-transparent">Queue <span id="queueCount" class="ml-1 text-xs bg-indigo-100 text-indigo-700 rounded-full px-2"></span></button>
-    <button data-tab="graph" class="tab py-2 border-b-2 border-transparent">Graph</button>
+  <nav class="max-w-6xl mx-auto px-4 flex gap-6 mt-3">
+    <button data-tab="record" class="tab py-2 border-b-2 border-transparent muted">1 · Record</button>
+    <button data-tab="insights" class="tab py-2 border-b-2 border-transparent muted">2 · Insights</button>
+    <button data-tab="queue" class="tab py-2 border-b-2 border-transparent muted">3 · Ask queue <span id="queueCount" class="chip !bg-[#6d7cff] !text-white hidden"></span></button>
   </nav>
 </header>
 
-<main class="max-w-5xl mx-auto px-4 py-6">
+<main class="max-w-6xl mx-auto px-4 py-6">
 
   <!-- RECORD -->
-  <section id="tab-record" class="tab-panel space-y-4">
-    <div class="bg-white rounded-lg border p-4 space-y-3">
-      <h2 class="font-semibold">Debrief a conversation</h2>
-      <div class="flex items-center gap-3">
-        <button id="recBtn" class="px-4 py-2 rounded bg-red-600 text-white">● Record</button>
-        <span id="recStatus" class="text-sm text-slate-500">30–60 seconds: who, role, company, what you talked about, what you each promised.</span>
+  <section id="tab-record" class="panel space-y-5">
+    <div class="card p-5 space-y-4">
+      <h2 class="text-xl font-semibold">Debrief a conversation</h2>
+      <p class="muted">20–60 seconds: who you met, their role and company, what you talked about, what you each promised.</p>
+      <div class="flex items-center gap-4 flex-wrap">
+        <button id="recBtn" class="btn-primary text-lg px-6">● Start recording</button>
+        <span id="recStatus" class="muted"></span>
       </div>
-      <details><summary class="text-sm text-slate-500 cursor-pointer">…or paste a transcript instead</summary>
-        <textarea id="transcript" rows="4" class="mt-2 w-full border rounded p-2 text-sm" placeholder="Just talked to Maya Lindqvist, ML engineer at Parallax Labs..."></textarea>
+      <details id="typedBox" class="pt-1">
+        <summary class="cursor-pointer muted">No mic? Type the debrief instead</summary>
+        <textarea id="typed" rows="4" class="mt-3 w-full p-3" placeholder="Just met Sarah Chen, backend engineer at Modal. We talked about GPU cold starts and KV cache. I promised to send her my benchmark repo."></textarea>
+        <button id="typedBtn" class="btn mt-2">Process typed debrief</button>
       </details>
-      <button id="processBtn" class="px-4 py-2 rounded bg-indigo-600 text-white disabled:opacity-40" disabled>Process</button>
     </div>
-    <div id="extractCard" class="hidden bg-white rounded-lg border p-4 space-y-2"></div>
+    <div id="extractCard" class="hidden card p-5 space-y-3"></div>
   </section>
 
-  <!-- PEOPLE -->
-  <section id="tab-people" class="tab-panel hidden space-y-6">
-    <div class="flex items-center gap-3">
-      <h2 class="font-semibold">Common Ground</h2>
-      <span class="text-sm text-slate-500">topics you discussed that the company has published about</span>
-      <button id="genAllBtn" class="ml-auto px-3 py-1.5 rounded bg-indigo-600 text-white text-sm">Generate all follow-ups</button>
+  <!-- INSIGHTS -->
+  <section id="tab-insights" class="panel hidden space-y-6">
+    <div class="flex items-center gap-3 flex-wrap">
+      <h2 class="text-xl font-semibold">Common Ground</h2>
+      <span class="muted">topics you discussed that the company has published about</span>
+      <button id="genAllBtn" class="btn-primary ml-auto">Generate all follow-ups</button>
     </div>
-    <div id="peopleList" class="grid md:grid-cols-2 gap-4"></div>
-    <h2 class="font-semibold pt-2">Referral radar</h2>
-    <p class="text-sm text-slate-500">engineers you met at companies hiring for your skills</p>
-    <div id="radar" class="bg-white rounded-lg border divide-y text-sm"></div>
+    <div id="cgList" class="grid md:grid-cols-2 gap-4"></div>
+
+    <div>
+      <h2 class="text-xl font-semibold">Referral Radar</h2>
+      <p class="muted mb-3">engineers you met at companies hiring for your skills</p>
+      <div id="radar" class="grid md:grid-cols-2 gap-4"></div>
+    </div>
+
+    <div>
+      <h2 class="text-xl font-semibold mb-3">Ask the graph</h2>
+      <div id="presets" class="flex flex-wrap gap-2"></div>
+      <div id="presetOut" class="mt-3"></div>
+    </div>
   </section>
 
   <!-- QUEUE -->
-  <section id="tab-queue" class="tab-panel hidden space-y-4">
-    <div class="flex items-center gap-3">
-      <h2 class="font-semibold">Approval queue</h2>
-      <select id="queueFilter" class="text-sm border rounded px-2 py-1"><option value="pending">pending</option><option value="sent">sent</option><option value="skipped">skipped</option><option value="all">all</option></select>
+  <section id="tab-queue" class="panel hidden space-y-4">
+    <div class="flex items-center gap-3 flex-wrap">
+      <h2 class="text-xl font-semibold">Ask queue</h2>
+      <span class="muted">nothing sends until you click Approve</span>
+      <select id="queueFilter" class="ml-auto px-2 py-1"><option value="pending">pending</option><option value="sent">sent</option><option value="skipped">skipped</option><option value="all">all</option></select>
     </div>
     <div id="queue" class="space-y-4"></div>
   </section>
-
-  <!-- GRAPH -->
-  <section id="tab-graph" class="tab-panel hidden space-y-4">
-    <div class="flex items-center gap-3 flex-wrap">
-      <h2 class="font-semibold">Graph presets</h2>
-      <span class="text-sm text-slate-500">FalkorDB browser: <a class="text-indigo-600 underline" href="http://localhost:3000" target="_blank">localhost:3000</a></span>
-      <span id="stats" class="ml-auto text-xs text-slate-500"></span>
-    </div>
-    <div id="presets" class="flex flex-wrap gap-2"></div>
-    <pre id="presetCypher" class="text-xs bg-slate-900 text-slate-100 rounded p-3 hidden"></pre>
-    <div id="presetOut" class="bg-white rounded-lg border overflow-auto"></div>
-  </section>
 </main>
 
-<!-- WHY modal -->
-<div id="whyModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center p-4" onclick="if(event.target===this)this.classList.add('hidden')">
-  <div class="bg-white rounded-lg max-w-2xl w-full p-5 space-y-3 max-h-[80vh] overflow-auto">
-    <div class="flex items-center"><h3 class="font-semibold">Why this draft?</h3><button class="ml-auto text-slate-400" onclick="document.getElementById('whyModal').classList.add('hidden')">✕</button></div>
-    <ol id="whyHops" class="list-decimal pl-5 space-y-1 text-sm"></ol>
-    <div id="whyGraph" class="text-xs text-slate-500 font-mono"></div>
+<!-- STATUS BAR -->
+<footer class="fixed bottom-0 inset-x-0 bg-[#0e1426] border-t border-[#263152] text-sm">
+  <div class="max-w-6xl mx-auto px-4 py-2 flex items-center gap-4 flex-wrap">
+    <span id="stGraph"><span class="spinner !w-3 !h-3"></span> FalkorDB…</span>
+    <span id="stMode" class="chip"></span>
+    <span id="stCounts" class="muted"></span>
+    <a id="stBrowser" class="src ml-auto" target="_blank" href="http://localhost:3000">FalkorDB Browser ↗</a>
   </div>
-</div>
+</footer>
 
 <script>
 const $ = (s) => document.querySelector(s);
-const api = async (path, opts = {}) => {
-  const res = await fetch(path, opts);
-  if (!res.ok) { const t = await res.text(); throw new Error(`${res.status} ${t.slice(0, 300)}`); }
-  return res.json();
-};
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const chip = (t, cls = 'bg-slate-100 text-slate-700') => `<span class="inline-block text-xs px-2 py-0.5 rounded ${cls} mr-1 mb-1">${esc(t)}</span>`;
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const chip = (t, style = '') => `<span class="chip" style="${style}">${esc(t)}</span>`;
+const link = (url, text) => url ? `<a class="src" target="_blank" rel="noopener" href="${esc(url)}">${esc(text || url)}</a>` : esc(text);
+const linkify = (s) => esc(s).replace(/(https?:\/\/[^\s)<]+)/g, '<a class="src" target="_blank" rel="noopener" href="$1">$1</a>');
+const ROLE_COLORS = { engineer: '#2a4d8f', recruiter: '#6b3d8f', founder: '#8f5a2a', investor: '#2a7a5a', pm_design: '#8f2a5a', other: '#3a4466' };
+const roleChip = (rc) => chip(rc, `background:${ROLE_COLORS[rc] || ROLE_COLORS.other};color:#fff`);
 
-// ---------- tabs
+async function api(path, opts = {}) {
+  if (opts.json !== undefined) { opts = { ...opts, method: opts.method || 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(opts.json) }; }
+  const res = await fetch(path, opts);
+  if (!res.ok) { let d = await res.text(); try { d = JSON.parse(d).detail || d; } catch {} throw new Error(`${res.status}: ${String(d).slice(0, 300)}`); }
+  return res.json();
+}
+const busy = (el, label) => { el.disabled = true; el.dataset.label = el.innerHTML; el.innerHTML = `<span class="spinner"></span> ${label}`; };
+const done = (el) => { el.disabled = false; el.innerHTML = el.dataset.label; };
+
+// ---------------------------------------------------------------- tabs
 document.querySelectorAll('.tab').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 function showTab(name) {
-  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('tab-active', b.dataset.tab === name));
-  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('hidden', p.id !== 'tab-' + name));
-  ({ people: loadPeople, queue: loadQueue, graph: loadGraph })[name]?.();
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('hidden', p.id !== 'tab-' + name));
+  ({ insights: loadInsights, queue: loadQueue })[name]?.();
 }
 
-// ---------- health
-api('/health').then(h => {
-  $('#mockBadge').classList.toggle('hidden', !h.mock_mode);
-  $('#graphBadge').classList.toggle('hidden', h.graph_status === 'ok');
-}).catch(() => $('#graphBadge').classList.remove('hidden'));
+// ---------------------------------------------------------------- status bar
+async function refreshStatus() {
+  try {
+    const h = await api('/health');
+    const ok = h.graph_status === 'ok';
+    $('#stGraph').innerHTML = ok ? '<span style="color:#4ade80">●</span> FalkorDB connected' : '<span style="color:#ff4d5e">●</span> FalkorDB down — run <code>make up</code>';
+    $('#stMode').textContent = h.mock_mode ? 'MOCK MODE' : 'LIVE';
+    $('#stMode').style.cssText = h.mock_mode ? 'background:#7a5b12;color:#fff' : 'background:#1f6b45;color:#fff';
+    if (h.counts) $('#stCounts').textContent = `${h.counts.Person} people · ${h.counts.Company} companies · ${h.counts.WebDoc} web docs · ${h.counts.Draft} drafts`;
+    if (h.falkordb_ui) $('#stBrowser').href = h.falkordb_ui;
+  } catch { $('#stGraph').innerHTML = '<span style="color:#ff4d5e">●</span> API unreachable'; }
+}
+refreshStatus(); setInterval(refreshStatus, 10000);
 
-// ---------- record
-let recorder, chunks = [], blob = null;
+// ---------------------------------------------------------------- record
+let recorder = null, chunks = [], startedAt = 0, timer = null;
 $('#recBtn').onclick = async () => {
   if (recorder && recorder.state === 'recording') { recorder.stop(); return; }
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch (e) { $('#recStatus').textContent = 'Mic unavailable — use the typed debrief below.'; $('#typedBox').open = true; return; }
   recorder = new MediaRecorder(stream); chunks = [];
-  recorder.ondataavailable = e => chunks.push(e.data);
-  recorder.onstop = () => { blob = new Blob(chunks, { type: 'audio/webm' }); stream.getTracks().forEach(t => t.stop());
-    $('#recBtn').textContent = '● Record again'; $('#recStatus').textContent = `Captured ${(blob.size/1024).toFixed(0)} KB. Hit Process.`; $('#processBtn').disabled = false; };
-  recorder.start(); $('#recBtn').textContent = '■ Stop'; $('#recStatus').textContent = 'Recording…';
+  recorder.ondataavailable = e => e.data.size && chunks.push(e.data);
+  recorder.onstop = async () => {
+    clearInterval(timer); stream.getTracks().forEach(t => t.stop());
+    $('#recBtn').textContent = '● Start recording';
+    const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+    await processAudio(blob);
+  };
+  recorder.start(); startedAt = Date.now();
+  $('#recBtn').textContent = '■ End & process';
+  timer = setInterval(() => $('#recStatus').innerHTML = `<span class="rec-dot"></span> Recording… ${Math.round((Date.now() - startedAt) / 1000)}s`, 250);
 };
-$('#transcript').oninput = () => $('#processBtn').disabled = !($('#transcript').value.trim() || blob);
-$('#processBtn').onclick = async () => {
-  const btn = $('#processBtn'); btn.disabled = true; btn.textContent = 'Transcribing & extracting…';
+
+async function processAudio(blob) {
+  const btn = $('#recBtn'); busy(btn, 'Transcribing & extracting…'); $('#recStatus').textContent = '';
   try {
-    const typed = $('#transcript').value.trim();
-    let x;
-    if (typed) {
-      // Demo insurance path: no mic, no transcription.
-      x = await api('/sessions/debrief-text?sync_enrich=true', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: typed }) });
-    } else {
-      const fd = new FormData();
-      fd.append('audio', blob, 'debrief.webm');
-      const { session_id } = await api('/sessions', { method: 'POST', body: fd });
-      btn.textContent = 'Enriching company…';
-      x = await api(`/sessions/${session_id}/process?sync_enrich=true`, { method: 'POST' });
-    }
-    renderExtract(x);
-  } catch (e) { alert(e.message); }
-  btn.disabled = false; btn.textContent = 'Process';
+    const fd = new FormData(); fd.append('audio', blob, 'debrief.webm');
+    const { session_id } = await api('/sessions', { method: 'POST', body: fd });
+    renderExtract(await api(`/sessions/${session_id}/process?sync_enrich=true`, { method: 'POST' }));
+  } catch (e) { $('#recStatus').textContent = `Failed: ${e.message}. Try again or type it below.`; $('#typedBox').open = true; }
+  done(btn);
+}
+
+$('#typedBtn').onclick = async () => {
+  const text = $('#typed').value.trim(); if (!text) return;
+  const btn = $('#typedBtn'); busy(btn, 'Extracting…');
+  try { renderExtract(await api('/sessions/debrief-text?sync_enrich=true', { json: { text } })); }
+  catch (e) { alert(e.message); }
+  done(btn);
 };
+
 function renderExtract(x) {
   const card = $('#extractCard'); card.classList.remove('hidden');
   card.innerHTML = `
-    <div class="flex items-baseline gap-2"><h3 class="font-semibold text-lg">${esc(x.person.name)}</h3>
-      <span class="text-slate-500">${esc(x.person.role || '')} ${x.company ? '@ ' + esc(x.company.name) : ''}</span>${chip(x.person.role_class, 'bg-indigo-100 text-indigo-700')}</div>
-    <p class="text-sm">${esc(x.summary)}</p>
+    <div class="flex items-baseline gap-3 flex-wrap"><h3 class="text-xl font-semibold">${esc(x.person.name)}</h3>
+      <span class="muted">${esc(x.person.role || '')}${x.company ? ' @ ' + esc(x.company.name) : ''}</span>${roleChip(x.person.role_class)}
+      ${x.person.email ? chip(x.person.email) : '<span class="muted text-sm">no email said</span>'}</div>
+    <p>${esc(x.summary)}</p>
     <div>${x.topics.map(t => chip(t)).join('')}</div>
-    <ul class="text-sm list-disc pl-5">${x.promises.map(p => `<li><b>${p.by === 'me' ? 'I' : 'They'}</b> promised: ${esc(p.text)}</li>`).join('')}</ul>
-    <details class="text-xs text-slate-500"><summary class="cursor-pointer">transcript</summary><pre class="mt-1">${esc(x.transcript)}</pre></details>
-    <div class="flex gap-2 pt-2">
-      <button class="px-3 py-1.5 rounded bg-indigo-600 text-white text-sm" onclick="generateFor(${JSON.stringify(x.person.name)})">Generate follow-up</button>
-      <button class="px-3 py-1.5 rounded border text-sm" onclick="showTab('people')">See common ground</button>
+    ${x.promises.length ? `<ul class="space-y-1">${x.promises.map(p => `<li>${p.by === 'me' ? '🫵 <b>You</b>' : '🤝 <b>They</b>'} promised: ${esc(p.text)}</li>`).join('')}</ul>` : ''}
+    <details class="muted text-sm"><summary class="cursor-pointer">transcript</summary><pre class="mt-2">${esc(x.transcript)}</pre></details>
+    <div class="flex gap-3 pt-2 flex-wrap">
+      <button class="btn-primary" data-gen="${esc(x.person.name)}">Draft follow-up for ${esc(x.person.name.split(' ')[0])}</button>
+      <button class="btn" data-goto="insights">See common ground</button>
     </div>`;
 }
-async function generateFor(person) {
-  try { await api('/asks/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ person }) }); showTab('queue'); }
-  catch (e) { alert(e.message); }
-}
 
-// ---------- people
-async function loadPeople() {
+// ---------------------------------------------------------------- insights
+async function loadInsights() {
   const [people, cg, radar] = await Promise.all([api('/graph/people'), api('/graph/common-ground'), api('/graph/referral-radar')]);
-  $('#peopleList').innerHTML = people.map(p => {
-    const rows = cg.filter(c => c.person === p.name);
-    return `<div class="bg-white rounded-lg border p-4 space-y-2">
-      <div class="flex items-baseline gap-2"><b>${esc(p.name)}</b><span class="text-sm text-slate-500">${esc(p.role || '')} ${p.company ? '@ ' + esc(p.company) : ''}</span>${chip(p.role_class, 'bg-indigo-100 text-indigo-700')}</div>
-      <div>${p.topics.map(t => chip(t)).join('')}</div>
-      ${rows.length ? `<ul class="text-sm space-y-1">${rows.map(c => `<li>🤝 <b>${esc(c.topic)}</b> → <a class="text-indigo-600 underline" target="_blank" href="${esc(c.doc_url)}">${esc(c.doc_title)}</a> <span class="text-xs text-slate-400">${esc(c.doc_kind)}</span></li>`).join('')}</ul>`
-                  : `<p class="text-sm text-slate-400">no common ground yet${p.company ? ` — <button class="underline" onclick="enrich(${JSON.stringify(p.company)}, ${JSON.stringify(p.domain)})">enrich ${esc(p.company)}</button>` : ''}</p>`}
-      <button class="text-sm text-indigo-600 underline" onclick="generateFor(${JSON.stringify(p.name)})">Generate follow-up</button>
+  const byPerson = {};
+  cg.forEach(c => (byPerson[c.person] ||= []).push(c));
+  people.sort((a, b) => (byPerson[b.name]?.length ? 1 : 0) - (byPerson[a.name]?.length ? 1 : 0));
+  $('#cgList').innerHTML = people.map(p => {
+    const rows = byPerson[p.name] || [];
+    const seen = new Set();
+    const uniq = rows.filter(r => !seen.has(r.doc_url + r.topic) && seen.add(r.doc_url + r.topic)).slice(0, 4);
+    return `<div class="card p-4 space-y-2">
+      <div class="flex items-baseline gap-2 flex-wrap"><b class="text-lg">${esc(p.name)}</b><span class="muted">${esc(p.role || '')}${p.company ? ' @ ' + esc(p.company) : ''}</span>${roleChip(p.role_class)}</div>
+      ${uniq.length ? `<ul class="space-y-2">${uniq.map(c => `<li>🤝 <b>${esc(c.topic)}</b> → ${link(c.doc_url, c.doc_title)} ${chip(c.doc_kind)}</li>`).join('')}</ul>`
+        : `<p class="muted">No common ground yet${p.company ? ` — <button class="underline" data-enrich="${esc(p.company)}" data-domain="${esc(p.domain || '')}">enrich ${esc(p.company)}</button>` : ''}</p>`}
+      <button class="btn text-sm" data-gen="${esc(p.name)}">Draft follow-up</button>
     </div>`;
-  }).join('') || '<p class="text-slate-500">No people yet. Record a debrief or run <code>make seed</code>.</p>';
-  $('#radar').innerHTML = radar.map(r => `<div class="p-3 flex flex-wrap gap-2 items-center"><b>${esc(r.person)}</b><span class="text-slate-500">@ ${esc(r.company)}</span>
-      <span>→ <a class="text-indigo-600 underline" target="_blank" href="${esc(r.job_url)}">${esc(r.job_title)}</a></span><span class="ml-auto">${r.matched_skills.map(s => chip(s, 'bg-green-100 text-green-800')).join('')}</span></div>`).join('')
-    || '<p class="p-3 text-slate-400">No matches yet.</p>';
-}
-async function enrich(company, domain) { try { await api('/graph/enrich', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ company, domain }) }); loadPeople(); } catch (e) { alert(e.message); } }
-$('#genAllBtn').onclick = async () => { $('#genAllBtn').textContent = 'Generating…'; try { await api('/asks/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); showTab('queue'); } catch (e) { alert(e.message); } $('#genAllBtn').textContent = 'Generate all follow-ups'; };
+  }).join('') || '<p class="muted">No one yet. Record a debrief first.</p>';
 
-// ---------- queue
+  $('#radar').innerHTML = radar.map(r => {
+    const matched = r.matched || r.matched_skills || [];
+    return `<div class="card p-4 space-y-1">
+      <div><b>${esc(r.person)}</b> <span class="muted">@ ${esc(r.company)}</span></div>
+      <div>is hiring → ${link(r.job_url, r.job_title)}</div>
+      <div>${matched.map(s => chip(s, 'background:#1f6b45;color:#fff')).join('')}</div>
+    </div>`;
+  }).join('') || '<p class="muted">No matches yet.</p>';
+  loadPresets();
+}
+
+// Person B's spec: POST /graph/query {preset}. Scaffold: POST /graph/query/{name}. Support both.
+const PREFERRED = ['inference_engineers', 'recruiters', 'open_promises', 'hot_topics', 'companies_by_sector'];
+async function loadPresets() {
+  let presets = [];
+  try { presets = await api('/graph/presets'); } catch {}
+  const names = presets.map(p => p.name);
+  const pick = PREFERRED.filter(n => names.includes(n)).slice(0, 3);
+  const list = pick.length ? pick.map(n => presets.find(p => p.name === n)) : PREFERRED.slice(0, 3).map(n => ({ name: n }));
+  $('#presets').innerHTML = list.map(p => `<button class="btn" data-preset="${esc(p.name)}" title="${esc(p.description || '')}">${esc(p.name.replace(/_/g, ' '))}</button>`).join('');
+}
+async function runPreset(name) {
+  $('#presetOut').innerHTML = '<span class="spinner"></span>';
+  let rows;
+  try { rows = await api('/graph/query', { json: { preset: name, params: {} } }); }
+  catch { rows = await api(`/graph/query/${name}`, { method: 'POST' }).catch(e => ({ error: e.message })); }
+  if (rows.error) { $('#presetOut').innerHTML = `<p class="muted">${esc(rows.error)}</p>`; return; }
+  if (!rows.length) { $('#presetOut').innerHTML = '<p class="muted">0 rows</p>'; return; }
+  const cols = Object.keys(rows[0]);
+  const cell = (v) => Array.isArray(v) ? v.map(x => chip(x)).join('') : (typeof v === 'string' && v.startsWith('http') ? link(v) : esc(v));
+  $('#presetOut').innerHTML = `<div class="card overflow-auto"><table class="w-full"><thead><tr>${cols.map(c => `<th class="text-left p-3 muted font-medium">${esc(c)}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r => `<tr class="border-t border-[#263152]">${cols.map(c => `<td class="p-3 align-top">${cell(r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
+
+$('#genAllBtn').onclick = async () => {
+  const btn = $('#genAllBtn'); busy(btn, 'Drafting…');
+  try { await api('/asks/generate', { json: {} }); showTab('queue'); } catch (e) { alert(e.message); }
+  done(btn);
+};
+
+// ---------------------------------------------------------------- queue
 $('#queueFilter').onchange = loadQueue;
 async function loadQueue() {
   const status = $('#queueFilter').value;
   const drafts = await api(`/asks/queue?status=${status}`);
-  api('/asks/queue?status=pending').then(p => $('#queueCount').textContent = p.length || '');
-  $('#queue').innerHTML = drafts.map(d => `<div class="bg-white rounded-lg border p-4 space-y-2">
-      <div class="flex items-center gap-2 flex-wrap"><b>${esc(d.person)}</b><span class="text-sm text-slate-500">${esc(d.email || 'no email')}</span>${chip(d.ask_type, 'bg-indigo-100 text-indigo-700')}${chip(d.status, d.status === 'sent' ? 'bg-green-100 text-green-800' : 'bg-slate-100')}
-        <button class="ml-auto text-sm text-indigo-600 underline" onclick="why('${esc(d.id)}')">why?</button></div>
-      <div class="text-sm"><b>Subject:</b> ${esc(d.subject)}</div>
-      <pre class="text-sm bg-slate-50 rounded p-3">${esc(d.body)}</pre>
-      <div class="text-xs text-slate-500">because: ${d.because.map(b => chip(b)).join('')}</div>
-      ${d.status === 'pending' ? `<div class="flex gap-2"><button class="px-3 py-1.5 rounded bg-green-600 text-white text-sm" onclick="act('${esc(d.id)}','approve')">Approve &amp; send</button>
-        <button class="px-3 py-1.5 rounded border text-sm" onclick="act('${esc(d.id)}','skip')">Skip</button></div>` : ''}
-    </div>`).join('') || '<p class="text-slate-500">Queue is empty. Generate follow-ups from the People tab.</p>';
+  updateQueueCount();
+  $('#queue').innerHTML = drafts.map(d => {
+    const pending = d.status === 'pending';
+    return `<div class="card p-5 space-y-3" data-draft="${esc(d.id)}">
+      <div class="flex items-center gap-2 flex-wrap">
+        <b class="text-lg">${esc(d.person)}</b>
+        ${pending ? `<input class="px-2 py-1 text-sm w-64" data-field="email" value="${esc(d.email || '')}" placeholder="add email to send">` : `<span class="muted">${esc(d.email || 'no email')}</span>`}
+        ${chip(d.ask_type.replace(/_/g, ' '), 'background:#3b46a8;color:#fff')}
+        ${chip(d.status, d.status === 'sent' ? 'background:#1f6b45;color:#fff' : '')}
+        <button class="btn text-sm ml-auto" data-why="${esc(d.id)}">Why this ask?</button>
+      </div>
+      ${pending ? `<input class="w-full px-3 py-2 font-semibold" data-field="subject" value="${esc(d.subject)}">`
+                : `<div class="font-semibold">${esc(d.subject)}</div>`}
+      ${pending ? `<textarea class="w-full p-3" rows="${Math.min(14, d.body.split('\n').length + 2)}" data-field="body">${esc(d.body)}</textarea>`
+                : `<pre class="bg-[#0e1426] rounded-lg p-3">${linkify(d.body)}</pre>`}
+      <div class="why hidden"></div>
+      ${pending ? `<div class="flex gap-3"><button class="btn-primary" data-approve="${esc(d.id)}">Approve &amp; send</button><button class="btn" data-skip="${esc(d.id)}">Skip</button></div>` : ''}
+    </div>`;
+  }).join('') || '<p class="muted">Queue is empty. Go to Insights → Generate all follow-ups.</p>';
 }
-async function act(id, action) { try { await api(`/asks/${id}/${action}`, { method: 'POST' }); loadQueue(); } catch (e) { alert(e.message); } }
-async function why(id) {
-  const w = await api(`/graph/why/${id}`);
-  $('#whyHops').innerHTML = w.hops.map(h => `<li>${esc(h).replace(/\((https?:[^)]+)\)/g, '(<a class="text-indigo-600 underline" target="_blank" href="$1">$1</a>)')}</li>`).join('');
-  $('#whyGraph').innerHTML = w.edges.map(e => `${esc(e.from)} -[${esc(e.type)}]-> ${esc(e.to)}`).join('<br>');
-  $('#whyModal').classList.remove('hidden');
-}
-
-// ---------- graph
-async function loadGraph() {
-  const [presets, stats] = await Promise.all([api('/graph/presets'), api('/graph/stats')]);
-  $('#stats').textContent = Object.entries(stats).map(([k, v]) => `${k}:${v}`).join('  ');
-  $('#presets').innerHTML = presets.map(p => `<button class="px-3 py-1.5 rounded border bg-white text-sm hover:border-indigo-400" title="${esc(p.description)}" onclick='runPreset(${JSON.stringify(p)})'>${esc(p.name)}</button>`).join('');
-}
-async function runPreset(p) {
-  $('#presetCypher').classList.remove('hidden'); $('#presetCypher').textContent = p.cypher;
-  const rows = await api(`/graph/query/${p.name}`, { method: 'POST' });
-  if (!rows.length) { $('#presetOut').innerHTML = '<p class="p-3 text-slate-400">0 rows</p>'; return; }
-  const cols = Object.keys(rows[0]);
-  $('#presetOut').innerHTML = `<table class="text-sm w-full"><thead class="bg-slate-100"><tr>${cols.map(c => `<th class="text-left p-2">${esc(c)}</th>`).join('')}</tr></thead>
-    <tbody>${rows.map(r => `<tr class="border-t">${cols.map(c => `<td class="p-2 align-top">${esc(Array.isArray(r[c]) ? r[c].join(', ') : r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+async function updateQueueCount() {
+  try { const p = await api('/asks/queue?status=pending'); const el = $('#queueCount'); el.textContent = p.length; el.classList.toggle('hidden', !p.length); } catch {}
 }
 
-showTab('record');
+async function approve(id, btn) {
+  const card = document.querySelector(`[data-draft="${CSS.escape(id)}"]`);
+  const val = (f) => card.querySelector(`[data-field="${f}"]`)?.value;
+  busy(btn, 'Sending…');
+  try { await api(`/asks/${encodeURIComponent(id)}/approve`, { json: { subject: val('subject'), body: val('body'), email: val('email') || null } }); loadQueue(); }
+  catch (e) { alert(e.message); done(btn); }
+}
+
+const KIND_ICON = { User: '🙋', Person: '👤', Session: '🎙️', Company: '🏢', Topic: '💬', WebDoc: '📄', Job: '💼', Promise: '🤝', Draft: '✉️', Skill: '🛠️' };
+async function toggleWhy(id, btn) {
+  const box = document.querySelector(`[data-draft="${CSS.escape(id)}"] .why`);
+  if (!box.classList.contains('hidden')) { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden'); box.innerHTML = '<span class="spinner"></span>';
+  try {
+    const w = await api(`/graph/why/${encodeURIComponent(id)}`);
+    const nodes = w.nodes || [], edges = w.edges || [];
+    const inbound = (nid) => edges.find(e => e.to === nid || e.from === nid);
+    box.innerHTML = `<div class="bg-[#0e1426] rounded-lg p-4"><div class="muted text-sm mb-2">Path through the graph</div><ol class="space-y-0">${
+      nodes.map((n, i) => {
+        const type = n.type || n.kind || '';
+        const url = n.url || (String(n.id).startsWith('http') ? n.id : null);
+        const e = i > 0 ? inbound(n.id) : null;
+        return `${e ? `<li class="muted text-xs pl-7 py-0.5">│ ${esc(e.type)}</li>` : ''}
+          <li class="flex gap-2 items-baseline"><span>${KIND_ICON[type] || '•'}</span>${chip(type)}<span>${url ? link(url, n.label) : esc(n.label)}</span></li>`;
+      }).join('')}</ol></div>`;
+  } catch (e) { box.innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
+}
+
+// ---------------------------------------------------------------- one click handler for all data-* buttons
+document.addEventListener('click', async (ev) => {
+  const b = ev.target.closest('button'); if (!b) return;
+  const d = b.dataset;
+  if (d.goto) showTab(d.goto);
+  else if (d.preset) runPreset(d.preset);
+  else if (d.why) toggleWhy(d.why, b);
+  else if (d.approve) approve(d.approve, b);
+  else if (d.skip) { await api(`/asks/${encodeURIComponent(d.skip)}/skip`, { method: 'POST' }).catch(e => alert(e.message)); loadQueue(); }
+  else if (d.gen) { busy(b, 'Drafting…'); try { await api('/asks/generate', { json: { person: d.gen } }); showTab('queue'); } catch (e) { alert(e.message); done(b); } }
+  else if (d.enrich) { busy(b, 'Scraping…'); try { await api('/graph/enrich', { json: { company: d.enrich, domain: d.domain || null } }); loadInsights(); } catch (e) { alert(e.message); done(b); } }
+});
+
+// #insights / #queue in the URL opens that tab (handy for the demo).
+showTab(['record', 'insights', 'queue'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'record');
+updateQueueCount();
 </script>
 </body>
 </html>
