@@ -1,5 +1,6 @@
 """Draft generation. OWNER: Person A.
-Each draft opens with the Common Ground hook (topic + source link) and is role-aware via rules.pick()."""
+Each draft opens with the Common Ground hook (topic + doc title + source link) and is role-aware via rules.pick().
+LLM drafts are checked against the rules below; one retry, then the template, so a bad draft never reaches the queue."""
 import re
 
 from pydantic import BaseModel
@@ -8,30 +9,46 @@ from app import llm
 from app.asks import rules
 from app.config import settings
 from app.contract import CommonGround, Draft
-from app.graph import queries, writes
+from app.ingest import graph_bridge as graph
+
+MAX_WORDS = 120
+HOOK_KIND_RANK = {"blog": 0, "news": 1, "repo": 2, "site": 3, "job": 4}
+BANNED = ("hope this finds you well", "hope you're doing well", "hope you are doing well", "i hope this email")
 
 
 class _DraftOut(BaseModel):
     subject: str
     body: str
+    because: list[str]
 
 
-PROMPT = """Write a short, warm follow-up email (under 150 words) from {user} to {person} ({role} at {company}),
-whom they met at {event}. Ask type: {ask_type}.
+SYSTEM = "You write short, specific, human follow-up emails. Use only facts given in the prompt. Never invent links."
 
-Open with the common-ground hook: they discussed "{topic}" and {company} published "{doc_title}" ({doc_url}) —
-reference it naturally with the link. Then make the ask:
-- referral: ask for a referral to the "{job}" role, link resume {attachment}
-- intro_chat: suggest a 20-min chat to continue the conversation
-- resume: attach resume {attachment} for the relevant role
-- collab: propose a concrete collaboration/pilot and link the deck {attachment}
-- deck: share the deck {attachment} and ask for a 20-min call
-- feedback_call: ask for 20 minutes of product feedback
-- thank_you: just say thanks and keep the door open
-Close any promises: {promises}. Sign off as {user}. No placeholders, no markdown."""
+PROMPT = """Write a plain-text follow-up email from {user} to {person} ({role} at {company}). They met at {event}.
 
+ASK TYPE: {ask_type}
+{ask_instruction}
 
-HOOK_KIND_RANK = {"blog": 0, "news": 1, "repo": 2, "site": 3, "job": 4}
+HARD RULES
+- Under {max_words} words including greeting and sign-off. Exactly one clear ask.
+- The FIRST sentence after the greeting must mention the topic "{topic}" {hook_rule}
+- {fulfilment_rule}
+- No flattery filler, no "I hope this finds you well", no markdown, no placeholders like [link].
+- Greeting "Hi {first}," and sign off with "{user}".
+- because: list exactly the reference strings you used, copied from REFS.
+
+REFS (the only things you may cite)
+{refs}"""
+
+ASK_INSTRUCTIONS = {
+    "referral": 'Ask for a referral to the "{job_title}" role ({job_url}). Mention the matching skills: {matched}. Link the resume: {attachment}',
+    "technical_followup": "Propose a 20-minute call to keep going on the technical thread. No attachment.",
+    "resume": "Share the resume ({attachment}) for roles that fit and ask what the next step is.",
+    "coffee_partnership": "Propose coffee to explore a concrete partnership. Link the deck: {attachment}",
+    "update": "Share the deck ({attachment}), offer to send short progress updates, and ask for a 20-minute call.",
+    "feedback_collab": "Ask for 20 minutes of product feedback on what you're building. Link the demo: {attachment}",
+    "thank_you": "Just say thanks and keep the door open. No ask beyond staying in touch.",
+}
 
 
 def _first(name: str) -> str:
@@ -42,11 +59,18 @@ def _slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
 
+def words(text: str) -> int:
+    return len(text.split())
+
+
+# ---------------------------------------------------------------- orchestration
+
+
 def generate(person_filter: str | None = None, uid: str = settings.USER_ID) -> list[Draft]:
-    people = queries.people(uid)
-    cg_all = queries.common_ground(uid)
-    radar = queries.referral_radar(uid)
-    promises = queries.open_promises(uid)
+    people = graph.people(uid)
+    cg_all = graph.common_ground(uid)
+    radar = graph.referral_radar(uid)
+    promises = graph.open_promises(uid)
     drafts: list[Draft] = []
     for p in people:
         if person_filter and p["name"] != person_filter:
@@ -54,69 +78,132 @@ def generate(person_filter: str | None = None, uid: str = settings.USER_ID) -> l
         # Prefer substantive content for the hook; a job page or homepage is a weak opener.
         cg = sorted((c for c in cg_all if c.person == p["name"]), key=lambda c: HOOK_KIND_RANK.get(c.doc_kind, 9))
         jobs = [r for r in radar if r["person"] == p["name"]]
-        proms = [pr for pr in promises if pr["person"] == p["name"]]
-        drafts.append(_build(p, cg[0] if cg else None, jobs[0] if jobs else None, proms))
-    for d in drafts:
-        writes.write_draft(d)
+        # Same promise can come from several sessions with one person; fulfil it once.
+        mine = list({pr["text"].lower(): pr for pr in promises if pr["person"] == p["name"] and pr["by"] == "me"}.values())
+        d = build(p, cg[0] if cg else None, jobs[0] if jobs else None, mine)
+        graph.write_draft(d, uid)
+        drafts.append(d)
     return drafts
 
 
-def _build(p: dict, hook: CommonGround | None, job: dict | None, proms: list[dict]) -> Draft:
+def build(p: dict, hook: CommonGround | None, job: dict | None, my_promises: list[dict]) -> Draft:
     ask_type, attachment = rules.pick(p["role_class"], job is not None)
-    company = p["company"] or "your company"
-    topic = hook.topic if hook else (p["topics"][0] if p["topics"] else "our conversation")
-    promise_lines = [
-        (f"As promised, I'll {pr['text'][0].lower() + pr['text'][1:]}." if pr["by"] == "me" else f"I'd love to take you up on: {pr['text'].lower()}.")
-        for pr in proms
-    ]
-    if settings.MOCK_MODE:
-        subject, body = _template(p, hook, job, ask_type, attachment, company, topic, promise_lines)
-    else:
-        out = llm.parse(
-            PROMPT.format(
-                user=settings.USER_NAME, person=p["name"], role=p["role"] or p["role_class"], company=company,
-                event=settings.EVENT_NAME, ask_type=ask_type, topic=topic,
-                doc_title=hook.doc_title if hook else "(no common-ground doc found — skip the hook)",
-                doc_url=hook.doc_url if hook else "", job=job["job_title"] if job else "",
-                attachment=attachment or "", promises="; ".join(promise_lines) or "none",
-            ),
-            _DraftOut,
-            system="You write concise, specific, human follow-up emails. Never invent facts beyond the prompt.",
-        )
-        subject, body = out.subject, out.body
+    ctx = {
+        "user": settings.USER_NAME, "event": settings.EVENT_NAME, "person": p["name"], "first": _first(p["name"]),
+        "role": p.get("role") or p["role_class"], "company": p.get("company") or "your company",
+        "topic": hook.topic if hook else (p["topics"][0] if p.get("topics") else "our conversation"),
+        "ask_type": ask_type, "attachment": attachment or "",
+        "job_title": job["job_title"] if job else "", "job_url": job["job_url"] if job else "",
+        "matched": ", ".join(job["matched"]) if job else "",
+        "fulfil": [rules.fulfilment_line(pr["text"]) for pr in my_promises],
+        "promise_texts": [pr["text"] for pr in my_promises],
+    }
+    refs = _refs(hook, job, my_promises, p)
+    subject = body = None
     because: list[str] = []
+    if not settings.MOCK_MODE:
+        subject, body, because = _llm_draft(ctx, hook, refs)
+    if body is None:
+        subject, body = _template(ctx, hook, job)
+        because = _template_because(hook, job, my_promises)
+    return Draft(id=f"d_{_slug(p['name'])}", person=p["name"], email=p.get("email"), ask_type=ask_type,
+                 subject=subject, body=body, because=because)
+
+
+def _refs(hook, job, my_promises, p) -> list[str]:
+    refs = []
     if hook:
-        because += [hook.doc_url, hook.topic]
+        refs += [hook.topic, hook.doc_url]
+    refs += [t for t in p.get("topics", []) if t not in refs]
     if job:
-        because.append(job["job_title"])
-    because += [pr["text"] for pr in proms]
-    return Draft(id=f"d_{_slug(p['name'])}", person=p["name"], email=p["email"], ask_type=ask_type, subject=subject, body=body, because=because)
+        refs.append(job["job_title"])
+    refs += [pr["text"] for pr in my_promises]
+    return refs
 
 
-def _template(p, hook, job, ask_type, attachment, company, topic, promise_lines) -> tuple[str, str]:
-    first, me, event = _first(p["name"]), settings.USER_NAME, settings.EVENT_NAME
+# ---------------------------------------------------------------- LLM path
+
+
+def problems(body: str, hook: CommonGround | None, fulfil: list[str], topic: str | None = None) -> list[str]:
+    """Rule check shared by the LLM path and tests. Empty list = draft is OK."""
+    issues = []
+    if words(body) > MAX_WORDS:
+        issues.append(f"too long ({words(body)} words, max {MAX_WORDS})")
+    low = body.lower()
+    if any(b in low for b in BANNED):
+        issues.append("contains filler like 'hope this finds you well'")
+    if "[" in body and "]" in body:
+        issues.append("contains a placeholder in brackets")
+    opening = " ".join(body.split("\n", 2)[1:])[:400] if body.lower().startswith("hi ") else body[:400]
+    if hook and hook.doc_url not in opening:
+        issues.append(f"first sentence must cite {hook.doc_url}")
+    if hook and topic and topic.lower() not in opening.lower():
+        issues.append(f'first sentence must mention the topic "{topic}"')
+    for line in fulfil:
+        url = re.search(r"https?://\S+", line)
+        if url and url.group(0).rstrip(".") not in body:
+            issues.append(f"missing promised link {url.group(0)}")
+    return issues
+
+
+def _llm_draft(ctx: dict, hook: CommonGround | None, refs: list[str]) -> tuple[str | None, str | None, list[str]]:
+    prompt = PROMPT.format(
+        **ctx, max_words=MAX_WORDS,
+        ask_instruction=ASK_INSTRUCTIONS.get(ctx["ask_type"], ASK_INSTRUCTIONS["thank_you"]).format(**ctx),
+        hook_rule=(f'AND the {ctx["company"]} {hook.doc_kind} "{hook.doc_title}" with its URL {hook.doc_url}.' if hook else "."),
+        fulfilment_rule=("Include these promise fulfilment lines (keep the links): " + " | ".join(ctx["fulfil"])) if ctx["fulfil"] else "No promises to fulfil.",
+        refs="\n".join(f"- {r}" for r in refs) or "- (none)",
+    )
+    for attempt in range(2):
+        try:
+            out = llm.parse(prompt, _DraftOut, system=SYSTEM)
+        except Exception as e:
+            print(f"[drafts] LLM failed for {ctx['person']}: {e}; using template")
+            return None, None, []
+        issues = problems(out.body, hook, ctx["fulfil"], ctx["topic"])
+        if not issues:
+            # Things the rules force into the body are always evidence; the model may add other refs it used.
+            forced = ([hook.topic, hook.doc_url] if hook else []) + ([ctx["job_title"]] if ctx["ask_type"] == "referral" else [])
+            forced += ctx["promise_texts"]
+            because = list(dict.fromkeys([*forced, *(b for b in out.because if b in refs)]))
+            return out.subject, out.body.strip(), because
+        print(f"[drafts] {ctx['person']} attempt {attempt + 1} rejected: {issues}")
+        prompt += "\n\nYour previous draft broke these rules, fix them: " + "; ".join(issues)
+    return None, None, []
+
+
+# ---------------------------------------------------------------- template path (MOCK_MODE and fallback)
+
+
+def _template(ctx: dict, hook: CommonGround | None, job: dict | None) -> tuple[str, str]:
+    c, topic, att = ctx["company"], ctx["topic"], ctx["attachment"]
     opener = (
-        f"Great meeting you at {event}. After we talked about {topic}, I read \"{hook.doc_title}\" that {company} published "
-        f"({hook.doc_url}) — really sharp, and it lines up with a lot of what we discussed."
-        if hook else f"Great meeting you at {event} — I really enjoyed our conversation about {topic}."
+        f'After our chat about {topic} at {ctx["event"]}, I read "{hook.doc_title}" from {c} ({hook.doc_url}).'
+        if hook else f'Great talking {topic} with you at {ctx["event"]}.'
     )
     asks = {
         "referral": (
-            f"Quick ask re: {job['job_title'] if job else 'roles'} at {company}",
-            f"I noticed {company} is hiring for the {job['job_title'] if job else 'open'} role"
-            + (f" ({', '.join(job['matched_skills'])} are exactly my background)" if job and job.get("matched_skills") else "")
-            + f". Would you be open to referring me? Resume: {attachment}",
+            f"Referral for {ctx['job_title']} at {c}?",
+            f"I saw {c} is hiring for {ctx['job_title']} ({ctx['job_url']}), and my {ctx['matched']} background lines up closely. "
+            f"Would you be open to referring me? Resume: {att}",
         ),
-        "intro_chat": (f"Continuing our {topic} conversation", "Would you be up for a 20-minute call in the next couple of weeks to keep the thread going?"),
-        "resume": (f"{me} — following up from {event}", f"Attaching my resume for the roles we discussed: {attachment}. Happy to talk through fit whenever is convenient."),
-        "collab": (f"Idea for {company} from {event}", f"I think there's a concrete way we could work together on {topic}. Deck here: {attachment} — would love 20 minutes to walk you through it."),
-        "deck": (f"{me} — deck as promised", f"Here's the deck: {attachment}. If it resonates, I'd love 20 minutes to get your read on it."),
-        "feedback_call": (f"20 minutes of your feedback?", f"Would you be open to a short call? I'd value your product perspective on what I'm building around {topic}."),
-        "thank_you": (f"Thanks for the chat at {event}", "No ask here — just wanted to say thanks and keep in touch."),
+        "technical_followup": (f"More on {topic}", "Would you be up for a 20-minute call next week to keep comparing notes?"),
+        "resume": (f"{ctx['user']}: resume from {ctx['event']}", f"Here's my resume as discussed: {att}. What's the best next step?"),
+        "coffee_partnership": (f"Coffee + a partnership idea for {c}?", f"I think there's a concrete partnership angle around {topic}. Deck: {att}. Coffee this week or next?"),
+        "update": (f"{ctx['user']}: deck + updates", f"Here's the deck: {att}. Happy to send short progress updates; open to a 20-minute call?"),
+        "feedback_collab": (f"Your take on {topic}?", f"I'd value your product read on what I'm building. Quick demo: {att}. Open to a 20-minute feedback session?"),
+        "thank_you": (f"Thanks for the chat at {ctx['event']}", "Thanks again for the conversation; let's stay in touch."),
     }
-    subject, ask = asks.get(ask_type, asks["thank_you"])
-    parts = [f"Hi {first},", "", opener, "", ask]
-    if promise_lines:
-        parts += ["", " ".join(promise_lines)]
-    parts += ["", f"Best,\n{me}"]
+    subject, ask = asks.get(ctx["ask_type"], asks["thank_you"])
+    parts = [f"Hi {ctx['first']},", "", opener, "", ask]
+    if ctx["fulfil"]:
+        parts += ["", " ".join(ctx["fulfil"])]
+    parts += ["", f"Best,\n{ctx['user']}"]
     return subject, "\n".join(parts)
+
+
+def _template_because(hook, job, my_promises) -> list[str]:
+    because = [hook.topic, hook.doc_url] if hook else []
+    if job:
+        because.append(job["job_title"])
+    return because + [pr["text"] for pr in my_promises]

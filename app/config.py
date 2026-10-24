@@ -33,6 +33,7 @@ class Settings:
 
     RESEND_API_KEY: str | None = _env("RESEND_API_KEY")
     FROM_EMAIL: str = _env("FROM_EMAIL", "wingman@example.com")
+    SEND_TEST_TO: str | None = _env("SEND_TEST_TO")  # rehearsal: every approved email goes here instead
 
     FALKORDB_HOST: str = _env("FALKORDB_HOST", "localhost")
     FALKORDB_PORT: int = int(_env("FALKORDB_PORT", "6379"))
@@ -43,6 +44,11 @@ class Settings:
     USER_SKILLS: list[str] = [s.strip() for s in _env("USER_SKILLS", "CUDA,Python,LLM inference").split(",") if s.strip()]
     RESUME_URL: str = _env("RESUME_URL", "https://example.com/resume.pdf")
     DECK_URL: str = _env("DECK_URL", "https://example.com/deck.pdf")
+    DEMO_URL: str = _env("DEMO_URL", "https://example.com/demo")
+    # Links for things you promise in conversation, matched by keyword: "repo=https://github.com/me/bench,notes=https://..."
+    ASSET_LINKS: dict[str, str] = dict(
+        kv.split("=", 1) for kv in (_env("ASSET_LINKS", "") or "").split(",") if "=" in kv
+    )
     EVENT_NAME: str = _env("EVENT_NAME", "the conference")
 
     ROOT: Path = ROOT

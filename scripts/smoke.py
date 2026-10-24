@@ -57,8 +57,9 @@ drafts = check("POST /asks/generate", lambda: ok(c.post("/asks/generate", json={
 check("POST /asks/generate (one person)", lambda: ok(c.post("/asks/generate", json={"person": person}))[0]["ask_type"])
 queue = check("GET /asks/queue", lambda: ok(c.get("/asks/queue")))
 did = next((d["id"] for d in (queue or []) if d["person"] == person), (queue or [{}])[0].get("id") if queue else None)
-check("GET /graph/why/{draft_id}", lambda: ok(c.get(f"/graph/why/{did}"))["hops"])
-check("POST /asks/{id}/approve", lambda: ok(c.post(f"/asks/{did}/approve"))["status"])
+check("GET /graph/why/{draft_id}", lambda: f"{len(ok(c.get(f'/graph/why/{did}'))['nodes'])} nodes")
+# dry_run: smoke must never send a real email, even with RESEND_API_KEY set.
+check("POST /asks/{id}/approve?dry_run", lambda: ok(c.post(f"/asks/{did}/approve", params={"dry_run": True}))["status"])
 skip_id = next((d["id"] for d in (queue or []) if d["id"] != did), None)
 if skip_id:
     check("POST /asks/{id}/skip", lambda: ok(c.post(f"/asks/{skip_id}/skip"))["status"])
