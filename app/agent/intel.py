@@ -21,6 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote_plus
 
 import httpx
+from pydantic import BaseModel
 
 from app.config import settings
 from app.agent import store
@@ -222,6 +223,47 @@ def research(person: str) -> dict:
     return out
 
 
+class _DocTopics(BaseModel):
+    url: str
+    topics: list[str]
+
+
+class _Tagged(BaseModel):
+    docs: list[_DocTopics]
+
+
+TAG_PROMPT = """Tag each page from {company} with 2-4 short lowercase topic phrases ("gpu inference", "seed investing").
+Topics from the conversation: {discussed}. Reuse one EXACTLY as written only if the page text clearly supports it;
+never add a topic the page doesn't cover.
+Return one entry per page, copying the url.
+
+{pages}"""
+
+
+def write_company_webdocs(company: str, domain: str | None, profile: dict, person: str) -> int:
+    """LinkedIn company page + its updates -> WebDocs with topics, so Common Ground fires for live recordings
+    (B's SERP-based enrich pipeline can't run without a SERP zone). Returns how many docs were written."""
+    from app import llm
+    from app.contract import EnrichResult, WebDoc
+    from app.graph import writes
+
+    pages = [{"url": profile.get("linkedin") or f"https://www.linkedin.com/company/{_slugs(company, domain)[0]}/",
+              "title": f"{company}: {(profile.get('about') or '')[:160]}", "kind": "site", "text": profile.get("about") or ""}]
+    pages += [{"url": u["url"], "title": u["title"][:160], "kind": "news", "text": u["title"]}
+              for u in profile.get("updates", []) if u.get("url")]
+    pages = list({p["url"]: p for p in pages if p["text"]}.values())  # dedupe by URL, drop empty pages
+    if not pages:
+        return 0
+    discussed = [r["t"] for r in run(
+        "MATCH (s:Session)-[:WITH]->(:Person {name:$p}) MATCH (s)-[:DISCUSSED]->(t:Topic) RETURN DISTINCT t.name AS t", {"p": person})]
+    tagged = llm.parse(TAG_PROMPT.format(company=company, discussed=", ".join(discussed) or "(none)",
+                                         pages="\n".join(f"- url: {p['url']}\n  text: {p['text'][:500]}" for p in pages)), _Tagged)
+    topics = {d.url: d.topics for d in tagged.docs}
+    docs = [WebDoc(url=p["url"], title=p["title"], kind=p["kind"], topics=topics.get(p["url"], [])) for p in pages]
+    writes.write_webdocs(EnrichResult(company=company, domain=domain, webdocs=docs, jobs=[]))
+    return len(docs)
+
+
 def _research_company(company: str | None, domain: str | None, known_url: str | None, persona: str | None, person: str) -> dict:
     steps: list[dict] = []
     if not company:
@@ -252,6 +294,12 @@ def _research_company(company: str | None, domain: str | None, known_url: str | 
             steps.append({"step": f"{company}: demo company profile (seed)", "ok": True, "detail": "seed data"})
     if profile:
         store.save_company(company, profile, profile.get("updates", []))
+    if profile and not is_seed:  # seed companies already have tagged WebDocs
+        try:
+            n = write_company_webdocs(company, domain, profile, person)
+            steps.append({"step": f"Tagged {n} {company} pages for Common Ground", "ok": True, "detail": "graph"})
+        except Exception as e:
+            steps.append({"step": "Common Ground tagging", "ok": False, "detail": str(e)[:160]})
     ci = store.company_intel(company)
     return {"company_profile": {**ci, "updates": (profile or {}).get("updates", [])} if (profile or ci.get("about")) else None,
             "portfolio": ci.get("portfolio", []), "portfolio_status": ci.get("portfolio_status"), "steps": steps}
