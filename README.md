@@ -1,7 +1,7 @@
 # wingman
 
-Record a 30-second voice debrief after each conversation at a conference. wingman transcribes it, extracts who
-you met (name, role, company, topics, promises), scrapes the company's public web presence with Bright Data,
+Record each conversation you have at a conference, with the other person in it. wingman transcribes it with
+speaker labels, extracts who you met (name, role, company, topics, promises), scrapes the company's public web presence with Bright Data,
 joins it all in FalkorDB, and finds **Common Ground** — topics you discussed that the company has *published*
 about. It then drafts a role-aware follow-up per person (referral ask for engineers at hiring companies, resume
 for recruiters, deck for investors…) that opens with the Common Ground hook + source link. You approve drafts
@@ -12,7 +12,8 @@ in a queue; approved drafts send via Resend. Every draft has a **why** path thro
 1. `make install` — installs requirements and copies `.env.example` → `.env` (MOCK_MODE=true by default).
 2. `make run` — starts FalkorDB in Docker, waits for it, then starts the API on http://localhost:8000.
    On first boot in MOCK_MODE the empty graph is auto-seeded with 7 conversations + cached web data.
-3. Open http://localhost:8000 — Record tab (or paste a transcript) → Process → People → Generate → Queue → Approve.
+3. Open http://localhost:8000 — Record tab: press Record, have the conversation, press Stop → Process → a transcript with
+   speaker labels (graph conversion is a stub for now). People → Generate → Queue → Approve run on seed data.
 4. `make smoke` (in a second terminal) — hits every endpoint in order and prints PASS/FAIL.
 5. Go live: put real keys in `.env`, set `MOCK_MODE=false`, restart. FalkorDB browser UI is at http://localhost:3000
    (if 3000 is taken, set `FALKORDB_UI_PORT=3001` in `.env` before `make up`; if a local Redis owns 6379,
@@ -24,8 +25,7 @@ Other targets: `make seed` (re-run seed, idempotent) · `make reset-graph` (drop
 
 | Piece | Mock | Live |
 |---|---|---|
-| Transcribe | returns a canned debrief (Maya @ Parallax Labs) | `gpt-4o-transcribe` |
-| Extract | canned `SessionExtract` for Maya | chat model + structured output |
+| Transcribe | returns a canned two-speaker conversation (Maya @ Parallax Labs) | Deepgram `nova-3` with speaker diarization when `DEEPGRAM_API_KEY` is set, else `gpt-4o-transcribe` |
 | Enrich (Bright Data) | serves `seed/webdocs/<company>.json` | SERP → fetch → LLM page parse |
 | Embeddings | deterministic hash vectors (1536-d) | `text-embedding-3-small` |
 | Drafts | templates | chat model + structured output |
@@ -55,7 +55,7 @@ Signatures are stable; B can change internals freely.
 | Method | Path | Returns |
 |---|---|---|
 | POST | `/sessions` (multipart `audio` or form `transcript`) | `{session_id}` |
-| POST | `/sessions/{id}/process?sync_enrich=` | `SessionExtract` (+ enriches company in background) |
+| POST | `/sessions/{id}/process` | `{session_id, transcript, graph_status}` — transcript saved to `cache/transcripts/`; graph conversion is a stub (`not_built`) |
 | GET | `/sessions`, `/sessions/{id}` | sessions with person/topics/promises |
 | POST | `/asks/generate` `{person?}` | `list[Draft]` (one per person; idempotent ids `d_<slug>`) |
 | GET | `/asks/queue?status=pending\|sent\|skipped\|all` | `list[Draft]` |
@@ -88,7 +88,7 @@ Topic names are lowercased; `merge_topic()` reuses an existing Topic when the em
 
 - [ ] `make run` is up, http://localhost:8000 loads, no red "FalkorDB down" badge
 - [ ] People tab shows 7 people with common-ground rows (Priya → "cold starts" → Lattice blog post)
-- [ ] Record a real debrief (or paste one) → Process → extract card appears with topics + promises
+- [ ] Record a real conversation → Process → transcript with speaker labels
 - [ ] Generate follow-up → Queue shows a draft whose first paragraph cites the company's post with a link
 - [ ] Click **why?** → hops: met → discussed topic → company published doc → draft
 - [ ] Approve → status sent (console log in mock; real email in live)

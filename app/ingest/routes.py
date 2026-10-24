@@ -2,18 +2,26 @@
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 
 from app.config import settings
-from app.contract import SessionExtract
-from app.graph import enrich, queries, writes
-from app.ingest import extract as extract_mod
-from app.ingest import transcribe
+from app.graph import queries
+from app.ingest import transcribe, transcript_graph
+from app.ingest.deepgram import TranscriptionError
 
 router = APIRouter(prefix="/sessions", tags=["ingest"])
 
-# Uploaded-but-unprocessed sessions. Process writes everything to the graph, so this can stay in memory.
+# Uploaded-but-unprocessed sessions. Process saves the transcript to disk, so this can stay in memory.
 _pending: dict[str, dict] = {}
+
+
+class ProcessResult(BaseModel):
+    """Response of /process. Ingest-local on purpose: contract.py is frozen and this never crosses the A/B seam."""
+
+    session_id: str
+    transcript: str
+    graph_status: str
 
 
 @router.post("")
@@ -26,26 +34,30 @@ async def create_session(audio: UploadFile | None = File(None), transcript: str 
     if audio is not None:
         ext = Path(audio.filename or "clip.webm").suffix or ".webm"
         audio_path = settings.CACHE_DIR / "audio" / f"{sid}{ext}"
-        audio_path.write_bytes(await audio.read())
+        # Stream to disk in chunks: an hour of opus at 32 kbps is ~15 MB, no need to hold it in memory.
+        with audio_path.open("wb") as f:
+            while chunk := await audio.read(1 << 20):
+                f.write(chunk)
     _pending[sid] = {"audio_path": str(audio_path) if audio_path else None, "transcript": transcript}
     return {"session_id": sid, "status": "uploaded", "has_audio": audio_path is not None}
 
 
-@router.post("/{sid}/process", response_model=SessionExtract)
-def process_session(sid: str, background: BackgroundTasks, sync_enrich: bool = False):
-    """Transcribe -> extract -> write to graph -> enrich the company (background unless sync_enrich=true)."""
-    pending = _pending.pop(sid, None)
+@router.post("/{sid}/process", response_model=ProcessResult)
+def process_session(sid: str):
+    """Transcribe (or take the pasted text) -> save to cache/transcripts -> graph conversion (stub for now)."""
+    pending = _pending.get(sid)
     if pending is None:
         raise HTTPException(404, f"session {sid} not found or already processed")
-    text = pending["transcript"] or transcribe.transcribe_file(pending["audio_path"])
-    x = extract_mod.extract(sid, text)
-    writes.ingest_session(settings.USER_ID, x)
-    if x.company:
-        if sync_enrich:
-            enrich.enrich_company(x.company.name, x.company.domain)
-        else:
-            background.add_task(enrich.enrich_company, x.company.name, x.company.domain)
-    return x
+    try:
+        text = pending["transcript"] or transcribe.transcribe_file(pending["audio_path"])
+    except TranscriptionError as e:
+        # Keep the upload pending so the user can retry /process.
+        raise HTTPException(502, str(e))
+    out = settings.CACHE_DIR / "transcripts" / f"{sid}.txt"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text)
+    _pending.pop(sid, None)  # only forget the upload once the transcript is on disk
+    return ProcessResult(session_id=sid, transcript=text, graph_status=transcript_graph.build(sid, text))
 
 
 @router.get("")

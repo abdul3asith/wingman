@@ -31,17 +31,15 @@
   <!-- RECORD -->
   <section id="tab-record" class="tab-panel space-y-4">
     <div class="bg-white rounded-lg border p-4 space-y-3">
-      <h2 class="font-semibold">Debrief a conversation</h2>
+      <h2 class="font-semibold">Record a conversation</h2>
       <div class="flex items-center gap-3">
         <button id="recBtn" class="px-4 py-2 rounded bg-red-600 text-white">● Record</button>
-        <span id="recStatus" class="text-sm text-slate-500">30–60 seconds: who, role, company, what you talked about, what you each promised.</span>
+        <span id="recTimer" class="hidden font-mono text-sm tabular-nums text-red-600">0:00</span>
+        <span id="recStatus" class="text-sm text-slate-500">Records until you press Stop (up to about an hour).</span>
       </div>
-      <details><summary class="text-sm text-slate-500 cursor-pointer">…or paste a transcript instead</summary>
-        <textarea id="transcript" rows="4" class="mt-2 w-full border rounded p-2 text-sm" placeholder="Just talked to Maya Lindqvist, ML engineer at Parallax Labs..."></textarea>
-      </details>
       <button id="processBtn" class="px-4 py-2 rounded bg-indigo-600 text-white disabled:opacity-40" disabled>Process</button>
     </div>
-    <div id="extractCard" class="hidden bg-white rounded-lg border p-4 space-y-2"></div>
+    <div id="transcriptCard" class="hidden bg-white rounded-lg border p-4 space-y-2"></div>
   </section>
 
   <!-- PEOPLE -->
@@ -113,42 +111,47 @@ api('/health').then(h => {
 }).catch(() => $('#graphBadge').classList.remove('hidden'));
 
 // ---------- record
-let recorder, chunks = [], blob = null;
+let recorder, chunks = [], blob = null, wakeLock = null, timerId = null;
+const fmtElapsed = (s) => { const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
+  return (h ? `${h}:${String(m).padStart(2, '0')}` : `${m}`) + ':' + String(sec).padStart(2, '0'); };
 $('#recBtn').onclick = async () => {
   if (recorder && recorder.state === 'recording') { recorder.stop(); return; }
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  recorder = new MediaRecorder(stream); chunks = [];
-  recorder.ondataavailable = e => chunks.push(e.data);
+  // Opus at 32 kbps: an hour is ~15 MB. 1 s timeslice so chunks accumulate as we go.
+  recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus', audioBitsPerSecond: 32000 }); chunks = [];
+  recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
   recorder.onstop = () => { blob = new Blob(chunks, { type: 'audio/webm' }); stream.getTracks().forEach(t => t.stop());
-    $('#recBtn').textContent = '● Record again'; $('#recStatus').textContent = `Captured ${(blob.size/1024).toFixed(0)} KB. Hit Process.`; $('#processBtn').disabled = false; };
-  recorder.start(); $('#recBtn').textContent = '■ Stop'; $('#recStatus').textContent = 'Recording…';
+    clearInterval(timerId); wakeLock?.release().catch(() => {}); wakeLock = null;
+    $('#recBtn').textContent = '● Record again'; $('#recStatus').textContent = `Captured ${fmtElapsed(Math.round((Date.now() - startedAt) / 1000))}, ${(blob.size/1024).toFixed(0)} KB. Hit Process.`; $('#processBtn').disabled = false; };
+  const startedAt = Date.now();
+  recorder.start(1000); $('#recBtn').textContent = '■ Stop'; $('#recStatus').textContent = 'Recording…';
+  const timer = $('#recTimer'); timer.classList.remove('hidden'); timer.textContent = '0:00';
+  timerId = setInterval(() => { timer.textContent = fmtElapsed(Math.round((Date.now() - startedAt) / 1000)); }, 1000);
+  // Keep the laptop awake for long recordings; silently carry on if unsupported or refused.
+  try { wakeLock = await navigator.wakeLock?.request('screen'); } catch (e) { wakeLock = null; }
 };
-$('#transcript').oninput = () => $('#processBtn').disabled = !($('#transcript').value.trim() || blob);
 $('#processBtn').onclick = async () => {
-  const btn = $('#processBtn'); btn.disabled = true; btn.textContent = 'Transcribing & extracting…';
+  const btn = $('#processBtn'); btn.disabled = true; btn.textContent = 'Transcribing…';
   try {
-    const fd = new FormData();
-    if ($('#transcript').value.trim()) fd.append('transcript', $('#transcript').value.trim()); else fd.append('audio', blob, 'debrief.webm');
+    const fd = new FormData(); fd.append('audio', blob, 'conversation.webm');
     const { session_id } = await api('/sessions', { method: 'POST', body: fd });
-    btn.textContent = 'Enriching company…';
-    const x = await api(`/sessions/${session_id}/process?sync_enrich=true`, { method: 'POST' });
-    renderExtract(x);
+    const x = await api(`/sessions/${session_id}/process`, { method: 'POST' });
+    renderTranscript(x);
   } catch (e) { alert(e.message); }
   btn.disabled = false; btn.textContent = 'Process';
 };
-function renderExtract(x) {
-  const card = $('#extractCard'); card.classList.remove('hidden');
+const SPEAKER_COLORS = ['text-indigo-700', 'text-emerald-700', 'text-amber-700', 'text-rose-700', 'text-sky-700', 'text-violet-700'];
+function renderTranscript(x) {
+  const card = $('#transcriptCard'); card.classList.remove('hidden');
+  const turns = x.transcript.split('\n').filter(Boolean).map(line => {
+    const m = line.match(/^Speaker (\d+):\s*(.*)$/);
+    const n = m ? Number(m[1]) : 0, text = m ? m[2] : line;
+    return `<div class="text-sm"><span class="font-semibold ${SPEAKER_COLORS[n % SPEAKER_COLORS.length]}">Speaker ${n}:</span> ${esc(text)}</div>`;
+  }).join('');
   card.innerHTML = `
-    <div class="flex items-baseline gap-2"><h3 class="font-semibold text-lg">${esc(x.person.name)}</h3>
-      <span class="text-slate-500">${esc(x.person.role || '')} ${x.company ? '@ ' + esc(x.company.name) : ''}</span>${chip(x.person.role_class, 'bg-indigo-100 text-indigo-700')}</div>
-    <p class="text-sm">${esc(x.summary)}</p>
-    <div>${x.topics.map(t => chip(t)).join('')}</div>
-    <ul class="text-sm list-disc pl-5">${x.promises.map(p => `<li><b>${p.by === 'me' ? 'I' : 'They'}</b> promised: ${esc(p.text)}</li>`).join('')}</ul>
-    <details class="text-xs text-slate-500"><summary class="cursor-pointer">transcript</summary><pre class="mt-1">${esc(x.transcript)}</pre></details>
-    <div class="flex gap-2 pt-2">
-      <button class="px-3 py-1.5 rounded bg-indigo-600 text-white text-sm" onclick="generateFor(${JSON.stringify(x.person.name)})">Generate follow-up</button>
-      <button class="px-3 py-1.5 rounded border text-sm" onclick="showTab('people')">See common ground</button>
-    </div>`;
+    <div class="flex items-baseline gap-2"><h3 class="font-semibold">Transcript</h3><span class="text-xs text-slate-400">${esc(x.session_id)}</span></div>
+    <div class="space-y-1 max-h-[60vh] overflow-auto">${turns}</div>
+    <p class="text-xs text-slate-400 pt-1">Graph conversion: ${x.graph_status === 'not_built' ? 'not built yet' : esc(x.graph_status)}</p>`;
 }
 async function generateFor(person) {
   try { await api('/asks/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ person }) }); showTab('queue'); }
