@@ -389,19 +389,24 @@ async function ingestConversation(blob) {
     const fd = new FormData(); fd.append('audio', blob, 'conversation.' + audioExt(blob));
     const { session_id } = await api('/sessions', { method: 'POST', body: fd });
     const r0 = await api(`/sessions/${session_id}/process`, { method: 'POST' });
-    const x = r0.extract;
-    if (!x) {  // transcript is saved either way; say what went wrong
+    // One recording can hold several conversations (split on silence / partner switch): one card each.
+    const convs = (r0.conversations?.length ? r0.conversations : [{ extract: r0.extract, facts: [] }]).filter(c => c.extract);
+    if (!convs.length) {  // transcript is saved either way; say what went wrong
       setMode('idle');
       addCard(`<div class="card-h"><span class="kind voice">Saved</span><h3>Transcript saved, but I couldn’t tell who you met</h3></div><div class="muted">${esc(r0.transcript.slice(0, 400))}</div>`, 'err');
       say('I saved the recording, but I couldn’t tell who you met. Make sure their name comes up.');
       return;
     }
-    const card = addCard(metCard(x));
+    const cards = convs.map(c => addCard(metCard(c.extract, c)));
     setMode('idle');
-    say(`Got it: ${x.person.name}${x.company ? ' from ' + x.company.name : ''}. I'm checking the live web for them now.`);
-    const scan = $('.scan-slot', card); scan.innerHTML = '<div class="scan"></div><div class="mono muted">Bright Data: LinkedIn + this week’s news…</div>';
-    const r = await api('/agent/research', { json: { name: x.person.name } });
-    scan.innerHTML = intelBlock(r); enter(scan); watchPortfolio(scan);
+    const names = convs.map(c => c.extract.person.name);
+    say(convs.length > 1 ? `Got ${convs.length} conversations: ${names.join(' and ')}. Checking the live web for them now.`
+      : `Got it: ${names[0]}${convs[0].extract.company ? ' from ' + convs[0].extract.company.name : ''}. I'm checking the live web for them now.`);
+    await Promise.all(convs.map(async (c, i) => {
+      const scan = $('.scan-slot', cards[i]); scan.innerHTML = '<div class="scan"></div><div class="mono muted">Bright Data: LinkedIn, company page, portfolio…</div>';
+      try { const r = await api('/agent/research', { json: { name: c.extract.person.name } }); scan.innerHTML = intelBlock(r); enter(scan); watchPortfolio(scan); }
+      catch (e) { scan.innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
+    }));
     refreshState();
   } catch (e) { setMode('idle'); say(e.message, false); }
 }
@@ -415,11 +420,15 @@ function addCard(html, cls = '') {
   return el;
 }
 
-function metCard(x) {
+const fmtSec = (s) => s == null ? '' : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
+function metCard(x, conv = {}) {
+  const when = conv.start != null ? `<span class="mono muted">${fmtSec(conv.start)}–${fmtSec(conv.end)}</span>` : '';
   return `<div class="card-h"><span class="kind voice">Met</span><h3>${esc(x.person.name)}</h3>
-      <span class="muted">${esc(x.person.role || '')}${x.company ? ' · ' + esc(x.company.name) : ''}</span></div>
-    <p style="margin:0 0 10px">${esc(x.summary)}</p>
+      <span class="muted">${esc(x.person.role || '')}${x.company ? ' · ' + esc(x.company.name) : ''}</span>${when}
+      ${conv.advances_goal ? '<span class="kind graph">advances your goal</span>' : ''}</div>
+    <p style="margin:0 0 10px">${esc(conv.context || x.summary)}</p>
     <div>${x.topics.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>
+    ${(conv.facts || []).length ? `<div style="margin-top:8px">${conv.facts.map(f => `<div class="post" style="border-color:var(--graph)"><span class="role">${esc(f.kind)}</span> ${esc(f.text)}</div>`).join('')}</div>` : ''}
     ${x.promises.length ? `<div class="muted" style="margin-top:8px">${x.promises.map(p => `${p.by === 'me' ? 'You' : 'They'} promised: ${esc(p.text)}`).join(' · ')}</div>` : ''}
     <div class="scan-slot" style="margin-top:14px"></div>`;
 }

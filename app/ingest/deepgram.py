@@ -39,7 +39,13 @@ def _content_type(path: str) -> str:
     return _CONTENT_TYPES.get(Path(path).suffix.lower(), "application/octet-stream")
 
 
-def transcribe_prerecorded(path: str, client: httpx.Client | None = None, diarize: bool = True) -> str:
+def transcribe_turns(path: str, client: httpx.Client | None = None) -> list[Turn]:
+    """Diarized Deepgram call returning timed turns (for splitting a recording into conversations)."""
+    return transcribe_prerecorded(path, client=client, as_turns=True)
+
+
+def transcribe_prerecorded(path: str, client: httpx.Client | None = None, diarize: bool = True,
+                           as_turns: bool = False) -> str | list[Turn]:
     """POST the file's bytes to Deepgram and return a 'Speaker N: ...' transcript.
 
     diarize=False (the voice agent's push-to-talk: one speaker) returns plain text with no speaker labels.
@@ -74,7 +80,7 @@ def transcribe_prerecorded(path: str, client: httpx.Client | None = None, diariz
     words = (alternatives[0].get("words") if alternatives else None) or []
     if words and not any("speaker" in w for w in words):
         print("[deepgram] WARNING: no speaker labels in response; everything will read as Speaker 0")
-    return format_words(words)
+    return words_to_turns(words) if as_turns else format_words(words)
 
 
 def words_to_turns(words: list[dict]) -> list[Turn]:

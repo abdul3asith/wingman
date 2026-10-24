@@ -6,7 +6,7 @@ speaker labels; otherwise OpenAI gpt-4o-transcribe (unlabeled text).
 from app import llm
 from app.config import settings
 from app.ingest import deepgram
-from app.ingest.turns import Turn
+from app.ingest.turns import Turn, parse_text
 
 # Timed mock recording for app.memory segmentation (teammate's event-memory work; not used by /process yet):
 # two conversations separated by ~38 s of silence, Speaker 1 is the user in both.
@@ -47,6 +47,19 @@ MOCK_TRANSCRIPT = (
 
 
 FALLBACK_MODEL = "whisper-1"
+
+
+def transcribe_turns(path: str | None) -> list[Turn]:
+    """Timed speaker turns for /process. Mock -> MOCK_TURNS (two conversations); Deepgram -> timed turns;
+    any fallback -> untimed turns parsed from text (so the recording is treated as one conversation)."""
+    if settings.MOCK_MODE or not path:
+        return list(MOCK_TURNS)
+    if settings.DEEPGRAM_API_KEY:
+        try:
+            return deepgram.transcribe_turns(path)
+        except Exception as e:
+            print(f"[transcribe] Deepgram turns failed ({e}); falling back to text")
+    return parse_text(transcribe_file(path))
 
 
 def transcribe_file(path: str | None) -> str:

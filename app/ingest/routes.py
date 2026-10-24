@@ -10,6 +10,7 @@ from app.contract import SessionExtract
 from app.graph import queries
 from app.ingest import graph_bridge, transcribe, transcript_graph
 from app.ingest.deepgram import TranscriptionError
+from app.ingest.turns import parse_text, to_text
 
 router = APIRouter(prefix="/sessions", tags=["ingest"])
 
@@ -22,8 +23,9 @@ class ProcessResult(BaseModel):
 
     session_id: str
     transcript: str
-    graph_status: str  # built | no_person | failed: …
-    extract: SessionExtract | None = None  # who was met, when graph_status == "built"
+    graph_status: str  # built | no_person | failed: … (of the first conversation with a person)
+    extract: SessionExtract | None = None  # first person met (kept for older callers)
+    conversations: list[dict] = []  # one per conversation: session_id, start, end, extract, facts, category, …
 
 
 class DebriefText(BaseModel):
@@ -57,9 +59,11 @@ def debrief_text(req: DebriefText, background: BackgroundTasks, sync_enrich: boo
         raise HTTPException(400, "text is empty")
     sid = _new_sid()
     _save_transcript(sid, req.text.strip())
-    status, x = transcript_graph.convert(sid, req.text.strip())
-    if x is None:
+    conv = transcript_graph.build_recording(sid, parse_text(req.text.strip()))[0]
+    if conv["extract"] is None:
+        status = conv["graph_status"]
         raise HTTPException(422, "couldn't tell who you met — say their name and try again" if status == "no_person" else status)
+    x = SessionExtract(**conv["extract"])
     _enrich(x, background, sync_enrich)
     return x
 
@@ -89,18 +93,22 @@ def process_session(sid: str, background: BackgroundTasks, sync_enrich: bool = F
     if pending is None:
         raise HTTPException(404, f"session {sid} not found or already processed")
     try:
-        text = pending["transcript"] or transcribe.transcribe_file(pending["audio_path"])
+        turns = parse_text(pending["transcript"]) if pending["transcript"] else transcribe.transcribe_turns(pending["audio_path"])
     except TranscriptionError as e:
         # Keep the upload pending so the user can retry /process.
         raise HTTPException(502, str(e))
+    text = to_text(turns)
     if not text.strip():
         raise HTTPException(422, "transcription came back empty — try again or use the typed debrief")
     _save_transcript(sid, text)
     _pending.pop(sid, None)  # only forget the upload once the transcript is on disk
-    status, x = transcript_graph.convert(sid, text)
-    if x:
-        _enrich(x, background, sync_enrich)
-    return ProcessResult(session_id=sid, transcript=text, graph_status=status, extract=x)
+    convs = transcript_graph.build_recording(sid, turns)  # one recording -> one or more conversations
+    built = [c for c in convs if c["extract"]]
+    for c in built:
+        _enrich(SessionExtract(**c["extract"]), background, sync_enrich)
+    first = (built or convs or [{"graph_status": "no_person", "extract": None}])[0]
+    return ProcessResult(session_id=sid, transcript=text, graph_status=first["graph_status"], extract=first["extract"],
+                         conversations=convs)
 
 
 @router.get("")

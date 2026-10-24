@@ -23,6 +23,7 @@ class _PersonOut(BaseModel):
 # Side channels keyed by session_id (SessionExtract is frozen): LinkedIn URL said, and persona.
 LINKEDIN: dict[str, str] = {}
 PERSONA: dict[str, str] = {}
+MEMORY: dict[str, dict] = {}  # session_id -> {category, context, facts: [{kind, text}]}
 
 
 def _linkedin_url(handle: str | None) -> str | None:
@@ -44,6 +45,11 @@ class _PromiseOut(BaseModel):
     doer_speaker: str | None  # "Speaker N" who will DO it (labeled transcripts); code derives `by` from it
 
 
+class _FactOut(BaseModel):
+    kind: Literal["job", "opportunity", "advice", "contact", "next_step", "personal", "other"]
+    text: str
+
+
 class _ExtractOut(BaseModel):
     me_speaker: str | None  # which "Speaker N" is the user; null for a solo debrief
     summary: str
@@ -51,6 +57,10 @@ class _ExtractOut(BaseModel):
     company: _CompanyOut | None
     topics: list[str]
     promises: list[_PromiseOut]
+    # event memory (teammate's graph: Session-[:LEARNED]->Fact), kept in MEMORY below
+    category: Literal["hiring", "technical", "partnership", "fundraising", "customer", "social", "other"]
+    context: str
+    facts: list[_FactOut]
 
 
 # Speaker attribution is the hardest part of extraction and everything downstream (fulfilment lines, drafts)
@@ -92,6 +102,11 @@ In both cases return exactly one person (the OTHER person, never {user}) with:
 - email: only if it was explicitly said; spoken forms like "maya at parallaxlabs dot ai" become maya@parallaxlabs.ai.
   NEVER guess or construct an email. Any unknown field is null.
 - linkedin: the handle or URL only if THEM said it ("find me on LinkedIn, sarahchen" -> "sarahchen"), else null.
+- category: hiring, technical, partnership, fundraising, customer, social or other.
+- context: one sentence on what this conversation was about.
+- facts: 1-5 atomic, specific things {user} learned from THEM ("Foundry Lane's winter batch closes Nov 15",
+  "Lattice is hiring backend engineers, remote, Python and Go"), each with a kind: job, opportunity, advice,
+  contact, next_step, personal or other. Never restate the promises as facts.
 - persona: who THEM is to {user}, a startup founder: "investor" (VC, angel, fund partner/associate),
   "accelerator" (partner/staff at an accelerator or incubator program, e.g. YC, Techstars), "founder" (founder or
   co-founder of their own company), "candidate" (someone {user} could hire: engineer, designer, PM, operator not
@@ -109,6 +124,10 @@ MOCK_EXTRACT = _ExtractOut(
                       linkedin="maya-lindqvist-demo", persona="candidate"),
     company=_CompanyOut(name="Parallax Labs", domain="parallaxlabs.ai"),
     topics=["speculative decoding", "gpu inference", "cuda"],
+    category="technical",
+    context="Compared notes on speculative decoding and CUDA benchmarking; Parallax Labs is hiring an inference engineer.",
+    facts=[_FactOut(kind="job", text="Parallax Labs is hiring an inference engineer; Maya can refer."),
+           _FactOut(kind="advice", text="A small draft model in front of the big one gave Parallax about a 2x speedup.")],
     promises=[
         _PromiseOut(by="them", text="Send the speculative decoding blog post", doer_speaker="Speaker 0"),
         _PromiseOut(by="me", text="Send my CUDA benchmark repo", doer_speaker="Speaker 1"),
@@ -169,6 +188,8 @@ def extract(session_id: str, transcript: str, started_at: str | None = None) -> 
     if url := _linkedin_url(out.person.linkedin):
         LINKEDIN[session_id] = url
     PERSONA[session_id] = out.person.persona
+    MEMORY[session_id] = {"category": out.category, "context": out.context,
+                          "facts": [f.model_dump() for f in out.facts if f.text.strip()][:5]}
     return SessionExtract(
         session_id=session_id,
         started_at=started_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
