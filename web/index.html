@@ -480,6 +480,48 @@ function watchPortfolio(scope) {
   });
 }
 
+function companyCard(c) {
+  const p = c.profile || {};
+  const steps = (c.steps || []).map(s => `<span class="step ${s.ok ? '' : 'fail'}">${s.ok ? '✓' : '×'} ${esc(s.step)}</span>`).join('');
+  const el = addCard(`<div class="card-h"><span class="kind web">Company · Bright Data + graph</span><h3>${esc(c.company)}</h3>
+      <span class="muted">${esc([p.industry, p.size].filter(Boolean).join(' · '))}</span></div>
+    ${steps ? `<div class="steps" style="margin-bottom:10px">${steps}</div>` : ''}
+    ${p.about ? `<p style="margin:0 0 10px">${esc(p.about.slice(0, 400))}${p.about.length > 400 ? '…' : ''}</p>` : '<div class="muted">No company page found on LinkedIn for this name.</div>'}
+    ${(p.updates || []).map(u => `<div class="post"><div>${esc(u.title)}</div>${u.url ? `<div>${link(u.url, 'update' + (u.published_at ? ' · ' + String(u.published_at).slice(0, 10) : ''))}</div>` : ''}</div>`).join('')}
+    ${c.people_you_met?.length ? `<div style="margin-top:8px"><b>You met:</b> ${c.people_you_met.map(n => `<span class="tag">${esc(n)}</span>`).join('')}</div>` : ''}
+    <div class="intel" data-company="${esc(c.company)}" style="border:0;padding:0;margin-top:8px"><div class="portfolio-slot">${portfolioBlock(c.company, c.portfolio, c.portfolio_status)}</div></div>
+    ${c.jobs?.length ? `<div style="margin-top:8px"><b>Open roles</b> ${c.jobs.slice(0, 5).map(j => link(j.url, j.title)).join(' · ')}</div>` : ''}
+    <div class="row" style="margin-top:10px">${p.website ? link(p.website, 'website') : ''} ${p.linkedin ? link(p.linkedin, 'LinkedIn page') : ''}
+      <button class="btn" data-say="Find software engineering jobs at ${esc(c.company)}">Find jobs</button></div>`);
+  watchPortfolio(el);
+}
+
+function jobsList(jobs) {
+  return jobs.length ? jobs.slice(0, 10).map(j => `<div class="person"><div>${link(j.url, j.title)}</div>${j.posted ? `<span class="mono muted">posted ${esc(String(j.posted).slice(0, 10))}</span>` : ''}</div>`).join('')
+    : '<div class="muted">No openings found for that search.</div>';
+}
+
+function jobsCard(e) {
+  const running = e.status === 'running';
+  const el = addCard(`<div class="card-h"><span class="kind web">LinkedIn jobs · Bright Data</span><h3>${esc(e.role || 'Jobs')} at ${esc(e.company)}</h3>
+      <span class="muted mono jobs-status">${running ? 'searching LinkedIn…' : esc(e.status || '')}</span></div>
+    <div class="jobs-slot">${running ? '<div class="scan"></div><div class="mono muted">Bright Data is pulling this week’s postings (1-2 min)…</div>' : jobsList(e.jobs || [])}</div>`);
+  if (!running) return;
+  let tries = 0;
+  const t = setInterval(async () => {
+    if (++tries > 30) return clearInterval(t);
+    try {
+      const c = await api(`/agent/company/${encodeURIComponent(e.company)}`);
+      if (c.jobs_status && c.jobs_status !== 'running') {
+        clearInterval(t);
+        $('.jobs-status', el).textContent = c.jobs_status;
+        const slot = $('.jobs-slot', el); slot.innerHTML = jobsList(c.jobs || []); enter(slot);
+        say(c.jobs?.length ? `Found ${c.jobs.length} openings at ${e.company}.` : `No openings found at ${e.company} for that search.`);
+      }
+    } catch {}
+  }, 8000);
+}
+
 function warmBlock(paths) {
   if (!paths?.length) return '<div class="muted">No warm paths yet: research an investor so their portfolio lands in the graph.</div>';
   return paths.map(w => `<div class="person"><div><b>${esc(w.investor)}</b> <span class="muted">· ${esc(w.fund)}</span></div>
@@ -595,6 +637,8 @@ function renderEvent(e) {
         <div class="row" style="margin-top:12px"><button class="btn primary" data-say="Yes, go ahead.">Yes, go ahead</button><button class="btn" data-say="No, hold off.">Hold off</button></div>`); break;
     case 'scheduled': addCard(`<div class="card-h"><span class="kind voice">Done</span><h3>${e.sent.length} ${e.send_at ? 'scheduled for ' + esc(fmtTime(e.send_at)) : 'sent'}</h3></div>${e.sent.map(s => `<div class="person"><b>${esc(s.person)}</b><span class="muted">${esc(s.subject)}</span></div>`).join('')}`); refreshState(); break;
     case 'graph': graphCard(e); break;
+    case 'company': companyCard(e); break;
+    case 'jobs': jobsCard(e); break;
     case 'error': addCard(`<div class="muted">${esc(e.message)}</div>`, 'err'); break;
   }
 }

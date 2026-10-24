@@ -223,6 +223,83 @@ def research(person: str) -> dict:
     return out
 
 
+# ---------------------------------------------------------------- any company: lookup + live job search
+
+LINKEDIN_JOBS_DATASET = os.getenv("BRIGHTDATA_LINKEDIN_JOBS_DATASET", "gd_lpfll7v5hcqtkxl6l")
+
+
+def company_lookup(name: str) -> dict:
+    """Company intel for the agent: graph first; if we know nothing yet, fetch its LinkedIn page live (Datasets)."""
+    known = store.find_company(name) or {}
+    company = known.get("name") or name.strip()
+    steps: list[dict] = []
+    if not known.get("about") and _live("datasets"):
+        try:
+            profile = company_profile(company, known.get("domain"), known.get("linkedin"))
+            steps.append({"step": f"{company} on LinkedIn · Datasets", "ok": bool(profile),
+                          "detail": f"{len(profile['updates'])} recent updates" if profile else "page not found"})
+            if profile:
+                store.save_company(company, profile, profile["updates"])
+                if "venture" in str(profile.get("industry") or "").lower():
+                    start_portfolio_job(company, known.get("domain"))
+                    steps.append({"step": f"{company} portfolio · Crunchbase (background)", "ok": True, "detail": "1-2 min"})
+        except Exception as e:
+            _mark_down("datasets", str(e))
+            steps.append({"step": f"{company} LinkedIn page · Datasets", "ok": False, "detail": str(e)[:160]})
+    ci = store.company_intel(company)
+    updates = [{"url": r["url"], "title": r["title"], "published_at": r["at"]} for r in run(
+        "MATCH (:Company {name:$c})-[:IN_NEWS]->(x:News) RETURN x.url AS url, x.title AS title, x.published_at AS at LIMIT 3",
+        {"c": company})]
+    return {"company": company, "profile": {**ci, "updates": updates} if ci.get("about") else None,
+            "portfolio": ci.get("portfolio", []), "portfolio_status": ci.get("portfolio_status"),
+            "people_you_met": (store.find_company(company) or {}).get("people", []), **store.company_jobs(company),
+            "steps": steps}
+
+
+def start_jobs_search(company: str, role: str = "software engineer") -> str | None:
+    """LinkedIn job search for one company (past month). Takes 1-2 min, so it runs in the background and writes
+    (:Company)-[:HIRING]->(:Job)-[:SOURCED_FROM]->(:WebDoc {kind:'job'}) when it lands."""
+    r = httpx.post(f"{API}/datasets/v3/trigger?dataset_id={LINKEDIN_JOBS_DATASET}&format=json&type=discover_new"
+                   f"&discover_by=keyword&limit_per_input=10", headers=_headers(), timeout=30,
+                   json=[{"keyword": role, "location": "United States", "company": company, "time_range": "Past month",
+                          "job_type": "", "experience_level": "", "remote": "", "selective_search": ""}])
+    if r.status_code != 200:
+        raise RuntimeError(f"LinkedIn jobs trigger {r.status_code}: {r.text[:120]}")
+    snapshot = r.json().get("snapshot_id")
+    store.set_company_jobs(company, "running")
+    threading.Thread(target=_poll_jobs, args=(company, snapshot), daemon=True).start()
+    return snapshot
+
+
+def _poll_jobs(company: str, snapshot: str) -> None:
+    from app.contract import EnrichResult, Job, WebDoc
+    from app.graph import writes
+
+    deadline = time.time() + PORTFOLIO_MAX_S
+    while time.time() < deadline:
+        time.sleep(PORTFOLIO_POLL_S)
+        try:
+            st = httpx.get(f"{API}/datasets/v3/progress/{snapshot}", headers=_headers(), timeout=30).json().get("status")
+            if st == "failed":
+                break
+            if st != "ready":
+                continue
+            data = httpx.get(f"{API}/datasets/v3/snapshot/{snapshot}?format=json", headers=_headers(), timeout=60).json()
+            rows = [d for d in (data if isinstance(data, list) else [data]) if isinstance(d, dict) and d.get("url")]
+            rows = [d for d in rows if company.lower().split()[0] in str(d.get("company_name", "")).lower()]
+            jobs = [Job(title=d["job_title"], url=d["url"].split("?")[0], req_id=str(d.get("job_posting_id") or "") or None,
+                        skills=[]) for d in rows if d.get("job_title")]
+            docs = [WebDoc(url=d["url"].split("?")[0], title=f"{d['job_title']} · {d.get('job_location') or ''}".strip(" ·"),
+                           kind="job", published_at=(d.get("job_posted_date") or "")[:10] or None) for d in rows if d.get("job_title")]
+            writes.write_webdocs(EnrichResult(company=company, webdocs=docs, jobs=jobs))
+            store.set_company_jobs(company, f"ready: {len(jobs)} openings")
+            print(f"[intel] LinkedIn jobs for {company}: {len(jobs)}")
+            return
+        except Exception as e:
+            print(f"[intel] jobs poll for {company}: {e}")
+    store.set_company_jobs(company, "failed")
+
+
 class _DocTopics(BaseModel):
     url: str
     topics: list[str]

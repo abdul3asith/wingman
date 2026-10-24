@@ -201,6 +201,34 @@ def company_intel(company: str) -> dict:
     return out
 
 
+def set_company_jobs(company: str, status: str) -> None:
+    run("MERGE (c:Company {name:$c}) SET c.jobs_status=$s", {"c": company, "s": status})
+
+
+def company_jobs(company: str) -> dict:
+    rows = run(
+        """MATCH (c:Company {name:$c})
+           OPTIONAL MATCH (c)-[:HIRING]->(j:Job) OPTIONAL MATCH (j)-[:SOURCED_FROM]->(d:WebDoc)
+           RETURN c.jobs_status AS status, collect(DISTINCT {title: j.title, url: j.url, posted: d.published_at}) AS jobs""",
+        {"c": company},
+    )
+    r = rows[0] if rows else {"status": None, "jobs": []}
+    jobs = sorted([j for j in r["jobs"] if j.get("title")], key=lambda j: j.get("posted") or "", reverse=True)
+    return {"status": r["status"], "jobs": jobs}
+
+
+def find_company(name: str) -> dict | None:
+    """Case-insensitive company lookup; exact name first, then contains."""
+    rows = run(
+        """MATCH (c:Company) WHERE toLower(c.name) = toLower($n) OR toLower(c.name) CONTAINS toLower($n)
+           OPTIONAL MATCH (c)<-[:WORKS_AT]-(p:Person)
+           RETURN c.name AS name, c.domain AS domain, c.about AS about, c.linkedin AS linkedin,
+                  collect(DISTINCT p.name) AS people ORDER BY size(c.name) LIMIT 1""",
+        {"n": name.strip()},
+    )
+    return rows[0] if rows else None
+
+
 def warm_paths(uid: str = UID) -> list[dict]:
     """Investors you met whose fund backs a company where you also met someone: the graph's warm-intro paths."""
     return run(

@@ -35,6 +35,9 @@ common ground, draft follow-ups, explain why a draft says what it says, and sche
 
 Rules:
 - Goals are fixed for this demo; if {user} restates them, acknowledge and carry on.
+- research_people is ONLY for people {user} met. Any question about a company or fund (what they do, portfolio,
+  who we met there) -> company_info. Job openings / positions / hiring at a company -> find_jobs, then say the
+  postings will appear on screen in a minute or two. Never say you couldn't find a company without calling these.
 - Sending is irreversible. ALWAYS call schedule_followups with confirmed=false first, tell {user} who gets what and when,
   and only call it with confirmed=true after an explicit yes.
 - Resolve times like "Monday 9am" to ISO 8601 with offset in America/Los_Angeles using this calendar
@@ -44,6 +47,11 @@ Rules:
 - Never invent people, posts or emails. If a tool returns an error, say what's missing in one sentence."""
 
 TOOLS = [
+    {"type": "function", "function": {"name": "company_info", "description": "Everything about ONE COMPANY (any company, met or not): what they do, recent updates, portfolio if it's a fund, people you met there, known job openings. Fetches the LinkedIn company page live with Bright Data if the graph has nothing yet.",
+        "parameters": {"type": "object", "properties": {"company": {"type": "string"}}, "required": ["company"]}}},
+    {"type": "function", "function": {"name": "find_jobs", "description": "Open job postings at a company, live from LinkedIn via Bright Data (takes 1-2 minutes; results appear on screen when ready).",
+        "parameters": {"type": "object", "properties": {"company": {"type": "string"}, "role": {"type": "string", "description": "e.g. software engineer"}},
+                       "required": ["company"]}}},
     {"type": "function", "function": {"name": "show_graph", "description": "Draw the live FalkorDB graph on screen: overview (everyone met, companies, goals), warm_intros, or person (one person's full subgraph: company, facts, topics, common ground, portfolio).",
         "parameters": {"type": "object", "properties": {"view": {"type": "string", "enum": ["overview", "warm_intros", "person"]},
                                                         "name": {"type": "string"}}, "required": ["view"]}}},
@@ -101,6 +109,32 @@ def _draft_card(d) -> dict:
 
 
 # ---------------------------------------------------------------- tools
+
+
+def t_company_info(company: str) -> tuple[dict, dict]:
+    c = intel.company_lookup(company)
+    p = c.get("profile") or {}
+    brief = {"company": c["company"], "about": (p.get("about") or "")[:300], "industry": p.get("industry"),
+             "recent_updates": [u["title"][:120] for u in p.get("updates", [])][:3],
+             "portfolio": [x["name"] for x in c["portfolio"]][:8], "portfolio_status": c["portfolio_status"],
+             "people_you_met": c["people_you_met"], "open_jobs": [j["title"] for j in c["jobs"]][:8], "jobs_status": c["status"]}
+    if not p and not c["portfolio"] and not c["jobs"]:
+        brief["note"] = "nothing found on the web for this name; ask the user to check the spelling"
+    return brief, {"type": "company", **c}
+
+
+def t_find_jobs(company: str, role: str = "software engineer") -> tuple[dict, dict]:
+    name = (store.find_company(company) or {}).get("name") or company.strip()
+    current = store.company_jobs(name)
+    if current["status"] != "running":
+        try:
+            intel.start_jobs_search(name, role)
+            current["status"] = "running"
+        except Exception as e:
+            return {"error": f"job search failed: {str(e)[:120]}"}, {"type": "error", "message": str(e)[:160]}
+    return ({"company": name, "role": role, "status": "searching LinkedIn now; results appear on screen in 1-2 minutes",
+             "already_known": [j["title"] for j in current["jobs"]][:5]},
+            {"type": "jobs", "company": name, "role": role, **current})
 
 
 def t_show_graph(view: str = "overview", name: str | None = None) -> tuple[dict, dict]:
@@ -201,6 +235,7 @@ def t_schedule_followups(confirmed: bool, names: list[str] | None = None, goal: 
 
 
 DISPATCH = {
+    "company_info": t_company_info, "find_jobs": t_find_jobs,
     "show_graph": t_show_graph, "warm_intros": t_warm_intros, "who_did_i_meet": t_who_did_i_meet, "group_by_goals": t_group_by_goals,
     "research_people": t_research_people, "common_ground": t_common_ground, "draft_followups": t_draft_followups,
     "explain_draft": t_explain_draft, "schedule_followups": t_schedule_followups,

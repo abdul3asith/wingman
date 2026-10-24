@@ -100,4 +100,5 @@ def company(name: str):
     """Company intel as it stands now; the page polls this while the Crunchbase portfolio job runs."""
     from app.agent import store
 
-    return {"company": name, **store.company_intel(name)}
+    return {"company": name, **store.company_intel(name), "jobs_status": store.company_jobs(name)["status"],
+            "jobs": store.company_jobs(name)["jobs"]}
