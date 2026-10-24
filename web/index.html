@@ -201,6 +201,8 @@ const link = (url, text) => url ? `<a class="src" href="${esc(url)}" target="_bl
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const M = window.Motion || {};
 const CSSVAR = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+// Safari/iOS MediaRecorder produces audio/mp4, Chrome audio/webm: name the upload so the server sends Deepgram the right Content-Type.
+const audioExt = (blob) => /mp4|aac|m4a/.test(blob.type) ? 'm4a' : /ogg/.test(blob.type) ? 'ogg' : 'webm';
 
 async function api(path, opts = {}) {
   if (opts.json !== undefined) opts = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(opts.json) };
@@ -301,7 +303,7 @@ function stopListening() { if (talkRec && talkRec.state === 'recording') talkRec
 async function send(input) {
   setMode('thinking');
   const fd = new FormData();
-  if (typeof input === 'string') fd.append('text', input); else fd.append('audio', input, 'talk.webm');
+  if (typeof input === 'string') fd.append('text', input); else fd.append('audio', input, 'talk.' + audioExt(input));
   if (cid) fd.append('conversation_id', cid);
   try {
     const out = await api('/agent/talk', { method: 'POST', body: fd });
@@ -384,7 +386,7 @@ $('#recBtn').onclick = async () => {
 async function ingestConversation(blob) {
   setMode('thinking'); typeReply('Transcribing and saving who you met…');
   try {
-    const fd = new FormData(); fd.append('audio', blob, 'conversation.webm');
+    const fd = new FormData(); fd.append('audio', blob, 'conversation.' + audioExt(blob));
     const { session_id } = await api('/sessions', { method: 'POST', body: fd });
     const r0 = await api(`/sessions/${session_id}/process`, { method: 'POST' });
     const x = r0.extract;

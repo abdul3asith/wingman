@@ -167,7 +167,7 @@ $('#recBtn').onclick = async () => {
 async function processAudio(blob) {
   const btn = $('#recBtn'); busy(btn, 'Transcribing & extracting…'); $('#recStatus').textContent = '';
   try {
-    const fd = new FormData(); fd.append('audio', blob, 'debrief.webm');
+    const fd = new FormData(); fd.append('audio', blob, /mp4|aac/.test(blob.type) ? 'debrief.m4a' : 'debrief.webm');
     const { session_id } = await api('/sessions', { method: 'POST', body: fd });
     const r = await api(`/sessions/${session_id}/process?sync_enrich=true`, { method: 'POST' });
     if (r.extract) renderExtract(r.extract);

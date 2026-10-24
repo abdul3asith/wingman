@@ -12,8 +12,9 @@ in a queue; approved drafts send via Resend. Every draft has a **why** path thro
 1. `make install` — installs requirements and copies `.env.example` → `.env` (MOCK_MODE=true by default).
 2. `make run` — starts FalkorDB in Docker, waits for it, then starts the API on http://localhost:8000.
    On first boot in MOCK_MODE the empty graph is auto-seeded with 7 conversations + cached web data.
-3. Open http://localhost:8000 — Record tab: press Record, have the conversation, press Stop → Process → a transcript with
-   speaker labels (graph conversion is a stub for now). People → Generate → Queue → Approve run on seed data.
+3. Open http://localhost:8000: tap the orb and talk to Wingman, or tap **Record a conversation** → Stop → a transcript
+   with speaker labels is saved, who you met lands in the graph, and Bright Data checks their LinkedIn.
+   The previous tabbed UI is at `/classic.html`; `DEMO.md` has the full voice script.
 4. `make smoke` (in a second terminal) — hits every endpoint in order and prints PASS/FAIL.
 5. Go live: put real keys in `.env`, set `MOCK_MODE=false`, restart. FalkorDB browser UI is at http://localhost:3000
    (if 3000 is taken, set `FALKORDB_UI_PORT=3001` in `.env` before `make up`; if a local Redis owns 6379,
@@ -55,7 +56,11 @@ Signatures are stable; B can change internals freely.
 | Method | Path | Returns |
 |---|---|---|
 | POST | `/sessions` (multipart `audio` or form `transcript`) | `{session_id}` |
-| POST | `/sessions/{id}/process` | `{session_id, transcript, graph_status}` — transcript saved to `cache/transcripts/`; graph conversion is a stub (`not_built`) |
+| POST | `/sessions/{id}/process` | `{session_id, transcript, graph_status, extract}`: transcript saved to `cache/transcripts/` first; `graph_status` is `built` (extract = who you met), `no_person`, or `failed: …` |
+| POST | `/sessions/debrief-text` `{text}` | `SessionExtract`: typed debrief, no audio |
+| POST | `/agent/talk` (multipart `audio` or form `text`, `conversation_id`) | `{heard, reply, ui: [events]}`: the voice agent |
+| POST | `/agent/speak` `{text}` | `audio/mpeg`: the agent's voice |
+| GET/POST | `/agent/state`, `/agent/research` `{name}` | goals + groups; Bright Data people intel |
 | GET | `/sessions`, `/sessions/{id}` | sessions with person/topics/promises |
 | POST | `/asks/generate` `{person?}` | `list[Draft]` (one per person; idempotent ids `d_<slug>`) |
 | GET | `/asks/queue?status=pending\|sent\|skipped\|all` | `list[Draft]` |
@@ -88,7 +93,7 @@ Topic names are lowercased; `merge_topic()` reuses an existing Topic when the em
 
 - [ ] `make run` is up, http://localhost:8000 loads, no red "FalkorDB down" badge
 - [ ] People tab shows 7 people with common-ground rows (Priya → "cold starts" → Lattice blog post)
-- [ ] Record a real conversation → Process → transcript with speaker labels
+- [ ] Record a real conversation → Stop → "Met" card with the right person, then the live-web (Bright Data) block
 - [ ] Generate follow-up → Queue shows a draft whose first paragraph cites the company's post with a link
 - [ ] Click **why?** → hops: met → discussed topic → company published doc → draft
 - [ ] Approve → status sent (console log in mock; real email in live)
