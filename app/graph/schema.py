@@ -12,13 +12,20 @@ RANGE_INDEXES = [
     ("Job", "url"),
     ("Skill", "name"),
     ("User", "id"),
+    ("Recording", "id"),
+    ("Fact", "id"),
 ]
 
 # TODO(workshop): confirm vector index + vecf32() syntax against the FalkorDB version on the demo box.
-VECTOR_INDEX = (
-    "CREATE VECTOR INDEX FOR (t:Topic) ON (t.embedding) "
-    f"OPTIONS {{dimension:{settings.EMBED_DIM}, similarityFunction:'cosine'}}"
-)
+# Topic: topic dedup in writes.merge_topic. Fact / Session: event-memory similarity search (app.graph.memory).
+VECTOR_INDEXES = [("Topic", "embedding"), ("Fact", "embedding"), ("Session", "embedding")]
+
+
+def _vector_index(label: str, prop: str) -> str:
+    return (
+        f"CREATE VECTOR INDEX FOR (n:{label}) ON (n.{prop}) "
+        f"OPTIONS {{dimension:{settings.EMBED_DIM}, similarityFunction:'cosine'}}"
+    )
 
 
 def ensure() -> dict:
@@ -29,9 +36,10 @@ def ensure() -> dict:
             created.append(f"{label}.{prop}")
         except Exception:  # already exists
             skipped.append(f"{label}.{prop}")
-    try:
-        run(VECTOR_INDEX)
-        created.append("Topic.embedding(vector)")
-    except Exception:
-        skipped.append("Topic.embedding(vector)")
+    for label, prop in VECTOR_INDEXES:
+        try:
+            run(_vector_index(label, prop))
+            created.append(f"{label}.{prop}(vector)")
+        except Exception:  # already exists
+            skipped.append(f"{label}.{prop}(vector)")
     return {"created": created, "skipped": skipped}

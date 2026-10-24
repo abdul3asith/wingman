@@ -242,9 +242,30 @@ def get_draft(draft_id: str) -> Draft | None:
     return _row_to_draft(rows[0]) if rows else None
 
 
+def goal_map(uid: str = settings.USER_ID) -> list[dict]:
+    """People whose conversation advances the user's goal, most relevant first, with what you learned from them."""
+    rows = run(
+        """
+        MATCH (u:User {id:$uid})-[:WANTS]->(g:Goal)<-[a:ADVANCES]-(p:Person)
+        MATCH (s:Session)-[:WITH]->(p) WHERE s.id = a.session_id
+        OPTIONAL MATCH (p)-[:WORKS_AT]->(c:Company)
+        OPTIONAL MATCH (s)-[:LEARNED]->(f:Fact)
+        RETURN p.name AS name, p.role AS role, c.name AS company, p.role_class AS role_class,
+               s.category AS category, a.relevance AS relevance, a.similarity AS similarity, a.reason AS reason,
+               s.id AS session_id, collect(DISTINCT [f.id, f.kind, f.text]) AS facts
+        ORDER BY relevance DESC
+        """,
+        {"uid": uid},
+    )
+    for r in rows:
+        facts = sorted(f for f in r["facts"] if f and f[0] is not None)
+        r["facts"] = [{"kind": kind, "text": text} for _, kind, text in facts]
+    return rows
+
+
 def stats() -> dict:
     out = {}
-    for label in ("User", "Session", "Person", "Company", "WebDoc", "Topic", "Job", "Promise", "Draft"):
+    for label in ("User", "Session", "Person", "Company", "WebDoc", "Topic", "Job", "Promise", "Draft", "Recording", "Fact", "Goal"):
         out[label] = scalar(f"MATCH (n:{label}) RETURN count(n)", default=0)
     return out
 
@@ -289,6 +310,15 @@ PRESETS: dict[str, dict] = {
             OPTIONAL MATCH (c)-[:IN_SPACE]->(sec:Sector)
             RETURN sec.name AS sector, c.stage AS stage, c.name AS company, collect(DISTINCT p.name) AS people
             ORDER BY sector, company""",
+    },
+    "goal_map": {
+        "description": "People whose conversation advances your goal, with what they told you",
+        "cypher": """
+            MATCH (u:User {id:$uid})-[:WANTS]->(g:Goal)<-[a:ADVANCES]-(p:Person)
+            OPTIONAL MATCH (s:Session)-[:LEARNED]->(f:Fact) WHERE s.id = a.session_id
+            RETURN p.name AS person, a.relevance AS relevance, a.reason AS reason,
+                   collect(f.kind + ': ' + f.text) AS facts
+            ORDER BY relevance DESC""",
     },
     "draft_evidence": {
         "description": "Every draft with the evidence nodes it was built from",

@@ -54,6 +54,11 @@ class Settings:
         kv.split("=", 1) for kv in (_env("ASSET_LINKS", "") or "").split(",") if "=" in kv
     )
     EVENT_NAME: str = _env("EVENT_NAME", "the conference")
+    # Single goal for the teammate's event-memory scoring (app.memory, not wired into /process yet). Matches the
+    # founder persona below; the agent itself uses the persona's three audience goals.
+    USER_GOAL: str = _env(
+        "USER_GOAL", "Founder at the conference: raise from investors and accelerators, partner with founders, hire early team"
+    )
 
     # Demo persona: a startup founder at the conference meeting investors, accelerator partners, founders and hires.
     STARTUP_NAME: str = _env("STARTUP_NAME", "Wingman")

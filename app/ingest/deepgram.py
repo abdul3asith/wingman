@@ -13,6 +13,7 @@ from pathlib import Path
 import httpx
 
 from app.config import settings
+from app.ingest.turns import Turn, to_text
 
 DEEPGRAM_URL = "https://api.deepgram.com/v1/listen"
 # Deepgram's pre-recorded limit (developers.deepgram.com/docs/pre-recorded-audio, "Limits"): requests exceeding
@@ -76,20 +77,27 @@ def transcribe_prerecorded(path: str, client: httpx.Client | None = None, diariz
     return format_words(words)
 
 
-def format_words(words: list[dict]) -> str:
-    """Word-level `speaker` labels -> one 'Speaker N: ...' line per speaker turn.
+def words_to_turns(words: list[dict]) -> list[Turn]:
+    """Word-level `speaker` labels -> one timed Turn per speaker turn (used by app.memory segmentation).
 
     Words are sorted by `start`; `punctuated_word` is preferred over `word`; empty words are skipped.
-    No words returns an empty string.
+    A turn starts at its first word's `start` and ends at its last word's `end`.
     """
-    lines: list[list] = []  # [speaker, [words]]
+    turns: list[Turn] = []
     for w in sorted(words, key=lambda w: w.get("start", 0.0)):
         text = (w.get("punctuated_word") or w.get("word") or "").strip()
         if not text:
             continue
-        speaker = w.get("speaker", 0)
-        if lines and lines[-1][0] == speaker:
-            lines[-1][1].append(text)
+        speaker = int(w.get("speaker", 0))
+        start, end = w.get("start"), w.get("end", w.get("start"))
+        if turns and turns[-1].speaker == speaker:
+            turns[-1].text += " " + text
+            turns[-1].end = end
         else:
-            lines.append([speaker, [text]])
-    return "\n".join(f"Speaker {s}: {' '.join(ws)}" for s, ws in lines)
+            turns.append(Turn(speaker=speaker, text=text, start=start, end=end))
+    return turns
+
+
+def format_words(words: list[dict]) -> str:
+    """Word-level `speaker` labels -> one 'Speaker N: ...' line per speaker turn. No words -> empty string."""
+    return to_text(words_to_turns(words))

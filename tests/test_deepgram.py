@@ -3,7 +3,8 @@ import pytest
 
 from app.config import settings
 from app.ingest import deepgram
-from app.ingest.deepgram import TranscriptionError, format_words
+from app.ingest.deepgram import TranscriptionError, format_words, words_to_turns
+from app.ingest.turns import Turn, to_text
 
 
 def _w(speaker, word, start, punctuated=None):
@@ -48,6 +49,11 @@ def test_format_fast_turn_taking_inside_one_utterance():
     )
 
 
+def test_words_to_turns_carries_first_start_and_last_end():
+    words = [_w(0, "hi", 0.0, "Hi,"), _w(0, "there", 0.3, "there."), _w(1, "hey", 1.5, "Hey.")]
+    assert words_to_turns(words) == [Turn(0, "Hi, there.", 0.0, 0.5), Turn(1, "Hey.", 1.5, 1.7)]
+
+
 @pytest.fixture
 def key(monkeypatch):
     monkeypatch.setattr(settings, "DEEPGRAM_API_KEY", "test-key")
@@ -75,6 +81,7 @@ def test_transcribe_prerecorded_success(key, wav):
     with httpx.Client(transport=httpx.MockTransport(handler)) as c:
         out = deepgram.transcribe_prerecorded(wav, client=c)
 
+    # The app's transcribe path returns speaker-labeled text; timed turns come from words_to_turns (tested above).
     assert out == "Speaker 0: Hi, Sarah.\nSpeaker 1: Hi."
     q = dict(seen["url"].params)
     assert seen["url"].host == "api.deepgram.com" and seen["url"].path == "/v1/listen"

@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from app.config import settings
 
 T = TypeVar("T", bound=BaseModel)
+EMBED_BATCH = 100  # texts per embeddings request
 _client = None
 
 
@@ -53,6 +54,19 @@ def embed(text: str) -> list[float]:
         return _mock_embedding(text)
     res = client().embeddings.create(model=settings.OPENAI_EMBED_MODEL, input=text)
     return res.data[0].embedding
+
+
+def embed_many(texts: list[str]) -> list[list[float]]:
+    """Embed many texts in batches of EMBED_BATCH, one vector per text in input order. Same mock rule as embed()."""
+    if settings.MOCK_MODE:
+        return [_mock_embedding(t) for t in texts]
+    out: list[list[float]] = []
+    for i in range(0, len(texts), EMBED_BATCH):
+        # The embeddings API rejects empty strings; a single space embeds as "nothing".
+        batch = [t if t.strip() else " " for t in texts[i:i + EMBED_BATCH]]
+        res = client().embeddings.create(model=settings.OPENAI_EMBED_MODEL, input=batch)
+        out.extend(d.embedding for d in sorted(res.data, key=lambda d: d.index))
+    return out
 
 
 def _mock_embedding(text: str) -> list[float]:
