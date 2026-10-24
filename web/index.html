@@ -39,7 +39,7 @@
       </div>
       <button id="processBtn" class="px-4 py-2 rounded bg-indigo-600 text-white disabled:opacity-40" disabled>Process</button>
     </div>
-    <div id="transcriptCard" class="hidden bg-white rounded-lg border p-4 space-y-2"></div>
+    <div id="results" class="hidden space-y-4"></div>
   </section>
 
   <!-- PEOPLE -->
@@ -136,22 +136,52 @@ $('#processBtn').onclick = async () => {
     const fd = new FormData(); fd.append('audio', blob, 'conversation.webm');
     const { session_id } = await api('/sessions', { method: 'POST', body: fd });
     const x = await api(`/sessions/${session_id}/process`, { method: 'POST' });
-    renderTranscript(x);
+    renderResults(x);
   } catch (e) { alert(e.message); }
   btn.disabled = false; btn.textContent = 'Process';
 };
-const SPEAKER_COLORS = ['text-indigo-700', 'text-emerald-700', 'text-amber-700', 'text-rose-700', 'text-sky-700', 'text-violet-700'];
-function renderTranscript(x) {
-  const card = $('#transcriptCard'); card.classList.remove('hidden');
-  const turns = x.transcript.split('\n').filter(Boolean).map(line => {
-    const m = line.match(/^Speaker (\d+):\s*(.*)$/);
-    const n = m ? Number(m[1]) : 0, text = m ? m[2] : line;
-    return `<div class="text-sm"><span class="font-semibold ${SPEAKER_COLORS[n % SPEAKER_COLORS.length]}">Speaker ${n}:</span> ${esc(text)}</div>`;
+const SPEAKER_COLORS = ['text-emerald-700', 'text-amber-700', 'text-rose-700', 'text-sky-700', 'text-violet-700', 'text-teal-700'];
+const fmtTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+const CATEGORY_COLORS = { hiring: 'bg-green-100 text-green-800', technical: 'bg-sky-100 text-sky-800', partnership: 'bg-violet-100 text-violet-800',
+  fundraising: 'bg-amber-100 text-amber-800', customer: 'bg-teal-100 text-teal-800', social: 'bg-pink-100 text-pink-800', other: 'bg-slate-100 text-slate-700' };
+// Segment transcript lines are "You: ..." or "Speaker N: ..."; the user gets indigo, each other speaker a stable color.
+function transcriptHtml(text) {
+  return text.split('\n').filter(Boolean).map(line => {
+    const m = line.match(/^(You|Speaker (\d+)):\s*(.*)$/);
+    const label = m ? m[1] : '', body = m ? m[3] : line;
+    const color = label === 'You' ? 'text-indigo-700' : SPEAKER_COLORS[Number(m?.[2] ?? 0) % SPEAKER_COLORS.length];
+    return `<div class="text-sm"><span class="font-semibold ${color}">${esc(label)}:</span> ${esc(body)}</div>`;
   }).join('');
-  card.innerHTML = `
-    <div class="flex items-baseline gap-2"><h3 class="font-semibold">Transcript</h3><span class="text-xs text-slate-400">${esc(x.session_id)}</span></div>
-    <div class="space-y-1 max-h-[60vh] overflow-auto">${turns}</div>
-    <p class="text-xs text-slate-400 pt-1">Graph conversion: ${x.graph_status === 'not_built' ? 'not built yet' : esc(x.graph_status)}</p>`;
+}
+function conversationCard(c) {
+  const p = c.person || {}, g = c.goal || {};
+  const times = c.start != null && c.end != null ? ` · ${fmtTime(c.start)}–${fmtTime(c.end)}` : '';
+  const who = [p.role, p.company].filter(Boolean).map(esc).join(' @ ');
+  const facts = (c.facts || []).map(f => `<li class="flex gap-2 items-baseline"><span class="shrink-0 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${f.kind === 'job' ? 'bg-emerald-100 text-emerald-800 font-semibold' : 'bg-slate-100 text-slate-500'}">${esc(f.kind)}</span><span>${esc(f.text)}</span></li>`).join('');
+  const promises = (c.promises || []).map(pr => `<li><span class="text-slate-500">${pr.by === 'me' ? 'You promised' : 'They promised'}:</span> ${esc(pr.text)}</li>`).join('');
+  const badge = g.linked
+    ? `<div class="rounded border border-green-200 bg-green-50 p-2 text-sm"><span class="font-semibold text-green-800">Advances your goal · ${Number(g.relevance).toFixed(2)}</span><p class="text-green-900/80 text-xs mt-0.5">${esc(g.reason)}</p></div>`
+    : `<div class="rounded border bg-slate-50 p-2 text-sm"><span class="text-slate-500">Not related to your goal</span><p class="text-slate-400 text-xs mt-0.5">${esc(g.reason)}</p></div>`;
+  return `<div class="bg-white rounded-lg border p-4 space-y-2">
+    <div class="flex items-baseline gap-2 flex-wrap"><h3 class="font-semibold">Conversation ${esc(c.seq)}${esc(times)}</h3><span class="text-xs text-slate-400">${esc(c.id)}</span><span class="ml-auto">${chip(c.category, CATEGORY_COLORS[c.category] || CATEGORY_COLORS.other)}</span></div>
+    <div class="flex items-baseline gap-2 flex-wrap"><b>${esc(p.name)}</b>${who ? `<span class="text-sm text-slate-500">${who}</span>` : ''}${chip(p.role_class, 'bg-indigo-100 text-indigo-700')}</div>
+    <p class="text-sm">${esc(c.context)}</p>
+    <div>${(c.topics || []).map(t => chip(t)).join('')}</div>
+    ${facts ? `<ul class="text-sm space-y-1">${facts}</ul>` : ''}
+    ${promises ? `<ul class="text-sm space-y-0.5">${promises}</ul>` : ''}
+    ${badge}
+    <details class="text-sm"><summary class="cursor-pointer text-slate-500">Transcript</summary><div class="space-y-1 mt-2 max-h-[40vh] overflow-auto">${transcriptHtml(c.transcript || '')}</div></details>
+  </div>`;
+}
+function renderResults(x) {
+  const out = $('#results'); out.classList.remove('hidden');
+  const convs = x.conversations || [];
+  out.innerHTML = `
+    <div class="bg-white rounded-lg border p-3 text-sm flex flex-wrap gap-x-4 gap-y-1 items-baseline">
+      <span><span class="text-slate-500">Your goal:</span> <b>${esc(x.goal)}</b> <span class="text-xs text-slate-400">(dummy for now)</span></span>
+      <span class="text-xs text-slate-400 ml-auto">${esc(x.session_id)} · ${convs.length} conversation${convs.length === 1 ? '' : 's'} · you are Speaker ${esc(x.me_speaker)}</span>
+    </div>
+    ${convs.map(conversationCard).join('') || '<p class="text-slate-500">No speech found in this recording.</p>'}`;
 }
 async function generateFor(person) {
   try { await api('/asks/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ person }) }); showTab('queue'); }
