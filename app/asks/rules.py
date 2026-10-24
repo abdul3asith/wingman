@@ -25,6 +25,9 @@ def attachment_for(ask_type: str) -> str | None:
     return {
         "referral": settings.RESUME_URL, "resume": settings.RESUME_URL,
         "coffee_partnership": settings.DECK_URL, "update": settings.DECK_URL, "feedback_collab": settings.DEMO_URL,
+        # founder persona
+        "pitch": settings.DECK_URL, "accelerator": settings.DECK_URL, "founder_coffee": settings.DEMO_URL,
+        "recruit": settings.DEMO_URL,
     }.get(ask_type)
 
 

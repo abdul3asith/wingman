@@ -3,5 +3,10 @@
   "posts": [
     {"url": "https://www.linkedin.com/posts/lena-fischer-demo_latency-activity-1", "text": "We hit 280ms end-to-end on our voice agent today. The trick was streaming ASR partials straight into the LLM.", "posted_at": "2026-10-23", "source": "linkedin"}
   ],
-  "news": []
+  "news": [],
+  "company": {"name": "Driftwood AI", "about": "Voice agents that feel human: sub-300ms streaming speech for support and sales teams.", "website": "https://driftwood.ai", "industry": "Software Development", "size": "2-10 employees", "linkedin": "https://www.linkedin.com/company/driftwood-ai-demo"},
+  "company_updates": [
+    {"url": "https://www.linkedin.com/company/driftwood-ai-demo/posts/turnkit", "title": "Open-sourced turnkit: end-of-turn detection for voice agents. Now in beta with 40 teams.", "published_at": "2d"}
+  ],
+  "portfolio": []
 }

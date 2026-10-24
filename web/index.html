@@ -186,9 +186,9 @@ canvas#orb { width: 100%; height: 100%; display: block; }
     <article class="card empty" id="welcome">
       <div class="card-h"><h3>Your conference, handled by voice</h3></div>
       <ol>
-        <li><b>Before:</b> “I want an LLM inference job and two seed investors.”</li>
-        <li><b>During:</b> tap <b>Record a conversation</b> when you meet someone.</li>
-        <li><b>After:</b> “Who fits my goals?” → “Research them” → “Draft follow-ups” → “Schedule for Monday 9am.”</li>
+        <li><b>You:</b> a founder meeting investors, accelerator partners, fellow founders and future hires.</li>
+        <li><b>During:</b> tap <b>Record a conversation</b>. When you stop, Wingman transcribes it, saves who you met, and researches them and their company.</li>
+        <li><b>After:</b> “Who should I follow up with?” → “Any warm intros?” → “Draft follow-ups” → “Schedule for Monday 9am.”</li>
       </ol>
     </article>
   </section>
@@ -357,7 +357,7 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => { if (e.code === 'Space' && spaceDown) { spaceDown = false; stopListening(); } });
 $('#typeForm').onsubmit = (e) => { e.preventDefault(); const v = $('#typeInput').value.trim(); if (!v) return; $('#typeInput').value = ''; showHeard(v); send(v); };
 
-const SUGGEST = ['I want an LLM inference job and seed investors', 'Who fits my goals?', 'Research my job search people', 'Draft follow-ups for my job search', 'Schedule them for Monday 9am'];
+const SUGGEST = ['Who should I follow up with?', 'Research the investors', 'Any warm intros?', 'Draft follow-ups for the investors', 'Schedule them for Monday 9am'];
 $('#chips').innerHTML = SUGGEST.map(s => `<button class="chip-btn" data-say="${esc(s)}">${esc(s)}</button>`).join('');
 
 // ---------------------------------------------------------------- recording a real conversation
@@ -401,7 +401,7 @@ async function ingestConversation(blob) {
     say(`Got it: ${x.person.name}${x.company ? ' from ' + x.company.name : ''}. I'm checking the live web for them now.`);
     const scan = $('.scan-slot', card); scan.innerHTML = '<div class="scan"></div><div class="mono muted">Bright Data: LinkedIn + this week’s news…</div>';
     const r = await api('/agent/research', { json: { name: x.person.name } });
-    scan.innerHTML = intelBlock(r); enter(scan);
+    scan.innerHTML = intelBlock(r); enter(scan); watchPortfolio(scan);
     refreshState();
   } catch (e) { setMode('idle'); say(e.message, false); }
 }
@@ -428,9 +428,47 @@ function intelBlock(r) {
   const steps = (r.steps || []).map(s => `<span class="step ${s.ok ? '' : 'fail'}">${s.ok ? '✓' : '×'} ${esc(s.step)}</span>`).join('');
   const posts = (r.posts || []).slice(0, 2).map(p => `<div class="post"><div>${esc(p.text)}</div><div>${link(p.url, 'LinkedIn post' + (p.posted_at ? ' · ' + p.posted_at : ''))}</div></div>`).join('');
   const news = (r.news || []).slice(0, 2).map(n => `<div class="post"><div>${esc(n.title)}</div><div>${link(n.url, 'news' + (n.published_at ? ' · ' + n.published_at : ''))}</div></div>`).join('');
-  return `<div class="intel"><div class="row"><b>${esc(r.person)}</b>${r.headline ? `<span class="muted">${esc(r.headline)}</span>` : ''}${r.linkedin ? link(r.linkedin, 'LinkedIn') : ''}</div>
-    ${steps ? `<div class="steps">${steps}</div>` : ''}${posts}${news}
-    ${!posts && !news ? '<div class="muted">Nothing fresh on the web this week.</div>' : ''}</div>`;
+  const cp = r.company_profile;
+  const company = cp ? `<div class="post" style="border-color:var(--graph)"><div><b>${esc(r.company)}</b>
+      <span class="muted">${esc([cp.industry, cp.size].filter(Boolean).join(' · '))}</span></div>
+      ${cp.about ? `<div class="muted">${esc(cp.about.slice(0, 220))}${cp.about.length > 220 ? '…' : ''}</div>` : ''}
+      ${(cp.updates || []).slice(0, 2).map(u => `<div>▸ ${esc(u.title)} ${u.url ? link(u.url, 'update' + (u.published_at ? ' · ' + u.published_at : '')) : ''}</div>`).join('')}
+      <div>${cp.website ? link(cp.website, 'website') : ''} ${cp.linkedin ? link(cp.linkedin, 'company page') : ''}</div></div>` : '';
+  return `<div class="intel" data-company="${esc(r.company || '')}"><div class="row"><b>${esc(r.person)}</b>${r.persona ? `<span class="kind voice">${esc(r.persona)}</span>` : ''}${r.headline ? `<span class="muted">${esc(r.headline)}</span>` : ''}${r.linkedin ? link(r.linkedin, 'LinkedIn') : ''}</div>
+    ${steps ? `<div class="steps">${steps}</div>` : ''}${posts}${news}${company}
+    <div class="portfolio-slot">${portfolioBlock(r.company, r.portfolio, r.portfolio_status)}</div>
+    ${!posts && !news && !company ? '<div class="muted">Nothing fresh on the web this week.</div>' : ''}</div>`;
+}
+
+function portfolioBlock(company, items, status) {
+  if (status === 'running') return `<div class="post"><div class="scan"></div><div class="mono muted">Crunchbase: pulling ${esc(company)}'s portfolio in the background…</div></div>`;
+  if (!items?.length) return '';
+  return `<div class="post"><div><b>Portfolio</b> <span class="muted mono">Crunchbase</span></div>
+    <div>${items.slice(0, 10).map(p => `<span class="tag" ${p.people_you_met?.length ? 'style="border-color:var(--web);color:var(--web)"' : ''}>${esc(p.name)}${p.round ? ' · ' + esc(p.round) : ''}${p.people_you_met?.length ? ' · you met ' + esc(p.people_you_met[0]) : ''}</span>`).join('')}</div></div>`;
+}
+
+// While Crunchbase runs (1-2 min), poll the graph and swap the portfolio in when it lands.
+function watchPortfolio(scope) {
+  scope.querySelectorAll('.intel[data-company]').forEach(el => {
+    const company = el.dataset.company; if (!company || !el.querySelector('.portfolio-slot .scan')) return;
+    let tries = 0;
+    const t = setInterval(async () => {
+      if (++tries > 30) return clearInterval(t);
+      try {
+        const c = await api(`/agent/company/${encodeURIComponent(company)}`);
+        if (c.portfolio_status && c.portfolio_status !== 'running') {
+          clearInterval(t);
+          const slot = $('.portfolio-slot', el); slot.innerHTML = portfolioBlock(company, c.portfolio, c.portfolio_status); enter(slot);
+        }
+      } catch {}
+    }, 8000);
+  });
+}
+
+function warmBlock(paths) {
+  if (!paths?.length) return '<div class="muted">No warm paths yet: research an investor so their portfolio lands in the graph.</div>';
+  return paths.map(w => `<div class="person"><div><b>${esc(w.investor)}</b> <span class="muted">· ${esc(w.fund)}</span></div>
+    <div class="mono"><span style="color:var(--graph)">INVESTED_IN</span> → ${esc(w.company)} ← <span style="color:var(--voice)">you met ${esc(w.person)}</span></div></div>`).join('');
 }
 
 function draftBlock(d) {
@@ -471,12 +509,14 @@ function renderEvent(e) {
     case 'groups': {
       const el = addCard(`<div class="card-h"><span class="kind graph">Grouped by your goals</span></div>
         <div class="groups">${e.groups.map(g => `<div class="group"><h4>${esc(g.intent)}</h4>${g.people.length ? g.people.map(p => `<div class="person"><b>${esc(p.person)}</b><span class="role">${esc((p.ask_type || '').replace(/_/g, ' '))}</span><span class="why">${esc(p.reason || '')}</span></div>`).join('') : '<div class="muted">No one yet</div>'}</div>`).join('')}
-        ${e.unassigned?.length ? `<div class="group"><h4 class="muted">No clear fit</h4>${e.unassigned.map(n => `<div class="person">${esc(n)}</div>`).join('')}</div>` : ''}</div>`);
+        ${e.unassigned?.length ? `<div class="group"><h4 class="muted">No clear fit</h4>${e.unassigned.map(n => `<div class="person">${esc(n)}</div>`).join('')}</div>` : ''}</div>
+        ${e.warm_paths?.length ? `<div style="margin-top:14px"><span class="kind graph">Warm intros</span>${warmBlock(e.warm_paths)}</div>` : ''}`);
       stagger(el.querySelectorAll('.group')); break;
     }
+    case 'warm_paths': addCard(`<div class="card-h"><span class="kind graph">FalkorDB · warm intros</span><h3>Investors who back people you met</h3></div>${warmBlock(e.paths)}`); break;
     case 'intel': {
-      const el = addCard(`<div class="card-h"><span class="kind web">Live web · Bright Data</span><h3>What they’re up to this week</h3></div><div class="intel-grid">${e.results.map(intelBlock).join('')}</div>`);
-      stagger(el.querySelectorAll('.intel')); updateWeb(e.bright_data); break;
+      const el = addCard(`<div class="card-h"><span class="kind web">Live web · Bright Data</span><h3>Who they are and what they’re building</h3></div><div class="intel-grid">${e.results.map(intelBlock).join('')}</div>`);
+      stagger(el.querySelectorAll('.intel')); updateWeb(e.bright_data); watchPortfolio(el); break;
     }
     case 'common_ground': {
       const seen = new Set(); const rows = e.rows.filter(r => { const k = r.person + r.doc_url; return !seen.has(k) && seen.add(k); }).slice(0, 8);
@@ -534,6 +574,7 @@ async function refreshState() {
 refreshState().then(s => {
   if (!s) return;
   renderGoals(s.goals);
+  if (s.persona_goal) $('#goals').insertAdjacentHTML('afterbegin', `<span class="hint" style="width:100%">${esc(s.startup)} founder · ${esc(s.event)}</span>`);
   const grouped = (s.groups || []).some(g => g.people.length);
   if (grouped) renderEvent({ type: 'groups', groups: s.groups, unassigned: [] });
   // ?say=… sends one line on load (scripted demos, screenshots)

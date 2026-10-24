@@ -1,0 +1,16 @@
+{
+  "profile": {"url": "https://www.linkedin.com/in/nadia-okoro-demo", "headline": "Partner @ Foundry Lane | 12-week accelerator for AI infra"},
+  "posts": [
+    {"url": "https://www.linkedin.com/posts/nadia-okoro-demo_winter-batch-activity-1", "text": "Foundry Lane winter batch applications close Nov 15. Looking for AI infra teams shipping to real users.", "posted_at": "2026-10-22", "source": "linkedin"}
+  ],
+  "news": [],
+  "company": {"name": "Foundry Lane", "about": "A 12-week accelerator for AI infrastructure startups: $250k for 7%, demo day in SF.", "website": "https://foundrylane.example", "industry": "Venture Capital and Private Equity Principals", "size": "11-50 employees", "linkedin": "https://www.linkedin.com/company/foundry-lane-demo"},
+  "company_updates": [
+    {"url": "https://www.linkedin.com/company/foundry-lane-demo/posts/winter-batch", "title": "Winter 2027 batch applications are open until Nov 15.", "published_at": "3d"}
+  ],
+  "portfolio": [
+    {"name": "Driftwood AI", "round": "Pre-Seed", "lead": true},
+    {"name": "Parallax Labs", "round": "Seed", "lead": false},
+    {"name": "Tessellate", "round": "Pre-Seed", "lead": true}
+  ]
+}

@@ -55,6 +55,15 @@ class Settings:
     )
     EVENT_NAME: str = _env("EVENT_NAME", "the conference")
 
+    # Demo persona: a startup founder at the conference meeting investors, accelerator partners, founders and hires.
+    STARTUP_NAME: str = _env("STARTUP_NAME", "Wingman")
+    STARTUP_PITCH: str = _env("STARTUP_PITCH", "a voice-first agent that turns conference conversations into follow-ups")
+    STARTUP_STAGE: str = _env("STARTUP_STAGE", "raising our pre-seed")
+    HIRING_FOR: str = _env("HIRING_FOR", "founding engineers")
+    PERSONA_GOAL: str = _env(
+        "PERSONA_GOAL", "Founder at the conference: raise from investors and accelerators, partner with founders, hire early team"
+    )
+
     ROOT: Path = ROOT
     WEB_DIR: Path = ROOT / "web"
     SEED_DIR: Path = ROOT / "seed"

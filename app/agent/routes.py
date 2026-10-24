@@ -74,3 +74,11 @@ def state():
 @router.post("/research")
 def research(req: ResearchRequest):
     return intel.research(req.name)
+
+
+@router.get("/company/{name}")
+def company(name: str):
+    """Company intel as it stands now; the page polls this while the Crunchbase portfolio job runs."""
+    from app.agent import store
+
+    return {"company": name, **store.company_intel(name)}

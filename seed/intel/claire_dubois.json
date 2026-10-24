@@ -5,5 +5,14 @@
   ],
   "news": [
     {"url": "https://vcnews.example/sable-ventures-fund-iii", "title": "Sable Ventures closes $120M Fund III focused on AI infrastructure", "published_at": "2026-10-18"}
+  ],
+  "company": {"name": "Sable Ventures", "about": "Early-stage investors in AI infrastructure and developer tools. Seed checks of $1-3M.", "website": "https://sable.vc", "industry": "Venture Capital and Private Equity Principals", "size": "11-50 employees", "linkedin": "https://www.linkedin.com/company/sable-ventures-demo"},
+  "company_updates": [
+    {"url": "https://www.linkedin.com/company/sable-ventures-demo/posts/fund-iii", "title": "We just closed Fund III: $120M for seed-stage AI infrastructure.", "published_at": "6d"}
+  ],
+  "portfolio": [
+    {"name": "Lattice Compute", "round": "Seed", "lead": true},
+    {"name": "Quillon", "round": "Pre-Seed", "lead": true},
+    {"name": "Kestrel Data", "round": "Seed", "lead": false}
   ]
 }

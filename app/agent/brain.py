@@ -25,12 +25,16 @@ SYSTEM = """You are Wingman, a voice-first networking agent for {user} at {event
   never read URLs aloud. Mention at most 3 names; the cards show the rest.
 - The screen shows rich cards for every tool result, so summarize ("Three people fit your job search, Priya looks strongest") instead of reading data out.
 
-What you can do (use tools, don't guess): remember {user}'s goals for the conference, list who they met, group people
-by goal, research people live on the web with Bright Data (LinkedIn posts, this week's news), show common ground,
-draft follow-ups, explain why a draft says what it says, and schedule or send emails.
+{user} is the founder of {startup}, {pitch} ({stage}, hiring {hiring}). At the conference they meet investors,
+accelerator partners, fellow founders and potential hires. Their goals: {goals}.
+
+What you can do (use tools, don't guess): list who they met, group people by goal, research people live on the web
+with Bright Data (LinkedIn profile + posts, their company's page and updates, and for investors/accelerators their
+portfolio from Crunchbase), find warm intros (an investor whose fund backs a company where {user} met someone), show
+common ground, draft follow-ups, explain why a draft says what it says, and schedule or send emails.
 
 Rules:
-- Before the conference, if {user} describes what they want, save it with save_goals (short goal phrases).
+- Goals are fixed for this demo; if {user} restates them, acknowledge and carry on.
 - Sending is irreversible. ALWAYS call schedule_followups with confirmed=false first, tell {user} who gets what and when,
   and only call it with confirmed=true after an explicit yes.
 - Resolve times like "Monday 9am" to ISO 8601 with offset in America/Los_Angeles using this calendar
@@ -40,8 +44,8 @@ Rules:
 - Never invent people, posts or emails. If a tool returns an error, say what's missing in one sentence."""
 
 TOOLS = [
-    {"type": "function", "function": {"name": "save_goals", "description": "Save the user's goals for the conference (replaces previous goals).",
-        "parameters": {"type": "object", "properties": {"goals": {"type": "array", "items": {"type": "string"}}}, "required": ["goals"]}}},
+    {"type": "function", "function": {"name": "warm_intros", "description": "Warm-intro paths from the graph: investors/accelerators the user met whose fund backs a company where the user also met someone.",
+        "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {"name": "who_did_i_meet", "description": "Everyone the user met, with role, company, topics.",
         "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {"name": "group_by_goals", "description": "Sort the people met into the user's goals, with the right ask for each.",
@@ -96,9 +100,10 @@ def _draft_card(d) -> dict:
 # ---------------------------------------------------------------- tools
 
 
-def t_save_goals(goals: list[str]) -> tuple[dict, dict]:
-    saved = store.set_intents(goals)
-    return {"saved": saved}, {"type": "goals", "goals": saved}
+def t_warm_intros() -> tuple[dict, dict]:
+    paths = store.warm_paths()
+    brief = [f"{w['investor']} ({w['fund']}) backs {w['company']}, where you met {w['person']}" for w in paths]
+    return {"count": len(paths), "paths": brief[:8]}, {"type": "warm_paths", "paths": paths}
 
 
 def t_who_did_i_meet() -> tuple[dict, dict]:
@@ -121,8 +126,11 @@ def t_research_people(names: list[str] | None = None, goal: str | None = None) -
         return {"error": "nobody matched"}, {"type": "error", "message": "nobody matched"}
     with ThreadPoolExecutor(max_workers=6) as pool:
         results = list(pool.map(intel.research, who))
-    brief = [{"name": r["person"], "posts": len(r.get("posts", [])), "news": len(r.get("news", [])),
-              "latest_post": (r.get("posts") or [{}])[0].get("text", "")[:120]} for r in results]
+    brief = [{"name": r["person"], "persona": r.get("persona"), "posts": len(r.get("posts", [])),
+              "latest_post": (r.get("posts") or [{}])[0].get("text", "")[:120],
+              "company_about": ((r.get("company_profile") or {}).get("about") or "")[:160],
+              "portfolio": [p["name"] for p in r.get("portfolio", [])][:6], "portfolio_status": r.get("portfolio_status")}
+             for r in results]
     return {"researched": brief, "bright_data": intel.status()}, {"type": "intel", "results": results, "bright_data": intel.status()}
 
 
@@ -180,7 +188,7 @@ def t_schedule_followups(confirmed: bool, names: list[str] | None = None, goal: 
 
 
 DISPATCH = {
-    "save_goals": t_save_goals, "who_did_i_meet": t_who_did_i_meet, "group_by_goals": t_group_by_goals,
+    "warm_intros": t_warm_intros, "who_did_i_meet": t_who_did_i_meet, "group_by_goals": t_group_by_goals,
     "research_people": t_research_people, "common_ground": t_common_ground, "draft_followups": t_draft_followups,
     "explain_draft": t_explain_draft, "schedule_followups": t_schedule_followups,
 }
@@ -209,8 +217,11 @@ def talk(conversation_id: str, text: str) -> dict:
     msgs = _conversations.setdefault(conversation_id, [])
     now = datetime.now(TZ)
     calendar = ", ".join(f"{(now + timedelta(days=i)):%A %Y-%m-%d}" for i in range(1, 8))
+    store.ensure_persona()
     system = SYSTEM.format(user=settings.USER_NAME, event=settings.EVENT_NAME,
-                           now=f"{now:%A %Y-%m-%d %H:%M} ({now:%z})", calendar=calendar)
+                           now=f"{now:%A %Y-%m-%d %H:%M} ({now:%z})", calendar=calendar,
+                           startup=settings.STARTUP_NAME, pitch=settings.STARTUP_PITCH, stage=settings.STARTUP_STAGE,
+                           hiring=settings.HIRING_FOR, goals="; ".join(store.get_intents()))
     msgs.append({"role": "user", "content": text})
     ui: list[dict] = []
     for _ in range(MAX_STEPS):
@@ -237,7 +248,19 @@ def talk(conversation_id: str, text: str) -> dict:
     return {"reply": "I did what I could; take a look at the screen.", "ui": ui}
 
 
+def _warm_seed_portfolios() -> None:
+    """Seed investors/accelerators: load their cached portfolios once (instant, no network) so warm intros work after a reset."""
+    for name, persona in store.personas().items():
+        if persona in ("investor", "accelerator") and intel._is_seed(name):
+            company = next((p.get("company") for p in _people() if p["name"] == name), None)
+            if company and not store.company_intel(company).get("portfolio_status"):
+                intel.research(name)
+
+
 def state() -> dict:
     """Everything the page needs on load."""
-    return {"goals": store.get_intents(), "groups": store.segments(), "people": _people(), "bright_data": intel.status(),
+    store.ensure_persona()
+    _warm_seed_portfolios()
+    return {"goals": store.get_intents(), "persona_goal": settings.PERSONA_GOAL, "startup": settings.STARTUP_NAME,
+            "groups": store.segments(), "people": _people(), "bright_data": intel.status(),
             "pending": len(graph.draft_queue("pending")), "user": settings.USER_NAME, "event": settings.EVENT_NAME}

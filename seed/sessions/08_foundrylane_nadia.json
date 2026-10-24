@@ -1,0 +1,13 @@
+{
+  "session_id": "s_foundrylane_nadia",
+  "started_at": "2026-10-23T17:10:00Z",
+  "transcript": "Speaker 0: Hi, I'm Nadia Okoro, I'm a partner at Foundry Lane, we run a twelve-week accelerator for AI infrastructure startups.\nSpeaker 1: Nice to meet you. I'm building a voice agent that turns conference conversations into follow-ups.\nSpeaker 0: Love that, our founders live at events. Our winter batch applications close November 15th. Send me your deck and I'll flag it for the selection committee.\nSpeaker 1: Will do, I'll send the deck this week. Could you also intro me to the Driftwood founders? They're in your portfolio.\nSpeaker 0: Sure, I'll make that intro. My email is nadia at foundrylane dot vc.",
+  "summary": "Met Nadia Okoro, partner at the Foundry Lane accelerator; winter batch closes Nov 15, she'll flag our deck and intro the Driftwood founders.",
+  "person": {"name": "Nadia Okoro", "role": "Partner", "role_class": "investor", "email": "nadia@foundrylane.vc"},
+  "company": {"name": "Foundry Lane", "domain": "foundrylane.vc"},
+  "topics": ["accelerator program", "ai infrastructure", "voice agents"],
+  "promises": [
+    {"by": "me", "text": "Send the deck"},
+    {"by": "them", "text": "Intro to the Driftwood founders"}
+  ]
+}

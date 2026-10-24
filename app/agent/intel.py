@@ -15,7 +15,9 @@ TODO(verify): LinkedIn dataset id + response field names against the Bright Data
 import json
 import os
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote_plus
 
 import httpx
@@ -105,28 +107,167 @@ def fresh_news(company: str) -> list[dict]:
     return out
 
 
+# ---------------------------------------------------------------- company: LinkedIn company page + Crunchbase portfolio
+
+LINKEDIN_COMPANY_DATASET = os.getenv("BRIGHTDATA_LINKEDIN_COMPANY_DATASET", "gd_l1vikfnt1wgvvqz95w")
+CRUNCHBASE_DATASET = os.getenv("BRIGHTDATA_CRUNCHBASE_DATASET", "gd_l1vijqt9jfj7olije")
+PORTFOLIO_POLL_S, PORTFOLIO_MAX_S = 10, 420
+
+
+def _slugs(name: str, domain: str | None) -> list[str]:
+    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    out = [base, base.replace("-", "")]
+    if domain:
+        out.append(re.sub(r"^(www\.)?", "", domain.lower()).split(".")[0])
+    return list(dict.fromkeys(s for s in out if s))
+
+
+def _scrape(dataset: str, url: str) -> dict | None:
+    r = httpx.post(f"{API}/datasets/v3/scrape?dataset_id={dataset}&format=json", headers=_headers(), timeout=TIMEOUT,
+                   json={"input": [{"url": url}]})
+    if r.status_code != 200:
+        raise RuntimeError(f"dataset {r.status_code}: {r.text[:120]}")
+    d = r.json()
+    d = d[0] if isinstance(d, list) and d else d
+    return d if isinstance(d, dict) and d.get("name") and not d.get("error") else None
+
+
+def company_profile(company: str, domain: str | None, known_url: str | None = None) -> dict | None:
+    """LinkedIn company page via Datasets: what they do + recent updates ('current projects')."""
+    urls = [known_url] if known_url else [f"https://www.linkedin.com/company/{s}/" for s in _slugs(company, domain)[:2]]
+    for url in urls:
+        d = _scrape(LINKEDIN_COMPANY_DATASET, url)
+        if not d:
+            continue
+        if not (set(company.lower().split()) & set(str(d.get("name", "")).lower().split())):
+            continue  # guessed slug landed on a different company
+        updates = []
+        for u in (d.get("updates") or [])[:4]:
+            text = (u.get("text") or u.get("title") or "").strip()
+            if text:
+                updates.append({"url": u.get("post_url") or u.get("url") or d.get("url") or url, "title": text[:240],
+                                "published_at": u.get("date") or u.get("time")})
+        return {"name": d.get("name"), "about": (d.get("about") or d.get("description") or "")[:600], "website": d.get("website"),
+                "industry": d.get("industries"), "size": d.get("company_size"), "linkedin": d.get("url") or url, "updates": updates}
+    return None
+
+
+def _parse_portfolio(d: dict) -> dict:
+    items = []
+    for inv in (d.get("investments") or [])[:25]:
+        org = inv.get("organization") or {}
+        rnd = (inv.get("funding_round") or {}).get("value") or ""
+        if org.get("value"):
+            items.append({"name": org["value"], "round": rnd.split(" - ")[0] or None, "lead": bool(inv.get("lead_investor")),
+                          "url": f"https://www.crunchbase.com/organization/{org['id']}" if org.get("id") else None})
+    exits = [e.get("value") for e in (d.get("exits") or [])[:6] if e.get("value")]
+    return {"items": items, "exits": exits, "num_investments": d.get("num_investments"), "about": d.get("about")}
+
+
+def start_portfolio_job(company: str, domain: str | None) -> str | None:
+    """Crunchbase takes 1-2 min, so trigger it and let a background thread write INVESTED_IN edges when it lands."""
+    slug = _slugs(company, domain)[0]
+    r = httpx.post(f"{API}/datasets/v3/trigger?dataset_id={CRUNCHBASE_DATASET}&format=json", headers=_headers(), timeout=30,
+                   json=[{"url": f"https://www.crunchbase.com/organization/{slug}"}])
+    if r.status_code != 200:
+        raise RuntimeError(f"Crunchbase trigger {r.status_code}: {r.text[:120]}")
+    snapshot = r.json().get("snapshot_id")
+    store.set_company_job(company, snapshot, "running")
+    threading.Thread(target=_poll_portfolio, args=(company, snapshot), daemon=True).start()
+    return snapshot
+
+
+def _poll_portfolio(company: str, snapshot: str) -> None:
+    deadline = time.time() + PORTFOLIO_MAX_S
+    while time.time() < deadline:
+        time.sleep(PORTFOLIO_POLL_S)
+        try:
+            st = httpx.get(f"{API}/datasets/v3/progress/{snapshot}", headers=_headers(), timeout=30).json().get("status")
+            if st == "failed":
+                break
+            if st != "ready":
+                continue
+            data = httpx.get(f"{API}/datasets/v3/snapshot/{snapshot}?format=json", headers=_headers(), timeout=60).json()
+            d = data[0] if isinstance(data, list) and data else data
+            p = _parse_portfolio(d if isinstance(d, dict) else {})
+            store.save_portfolio(company, p["items"])
+            store.set_company_job(company, snapshot, f"ready: {len(p['items'])} investments")
+            print(f"[intel] Crunchbase portfolio for {company}: {len(p['items'])} investments")
+            return
+        except Exception as e:
+            print(f"[intel] portfolio poll for {company}: {e}")
+    store.set_company_job(company, snapshot, "failed")
+
+
 # ---------------------------------------------------------------- orchestration
 
 
 def research(person: str) -> dict:
-    """Run every Bright Data lookup for one person, store results, return what we found + which steps ran live."""
+    """Every Bright Data lookup for one person, run in parallel, stored in the graph. Returns what was found + steps."""
     row = run(
-        "MATCH (p:Person {name:$p}) OPTIONAL MATCH (p)-[:WORKS_AT]->(c:Company) RETURN p.linkedin AS linkedin, c.name AS company",
+        """MATCH (p:Person {name:$p}) OPTIONAL MATCH (p)-[:WORKS_AT]->(c:Company)
+           RETURN p.linkedin AS linkedin, p.persona AS persona, c.name AS company, c.domain AS domain, c.linkedin AS company_li""",
         {"p": person},
     )
     if not row:
         return {"person": person, "error": f"I haven't met anyone called {person}"}
-    linkedin, company = row[0]["linkedin"], row[0]["company"]
+    r0 = row[0]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        person_f = pool.submit(_research_person, person, r0["linkedin"], r0["company"])
+        company_f = pool.submit(_research_company, r0["company"], r0["domain"], r0["company_li"], r0["persona"], person)
+        out, company_out = person_f.result(), company_f.result()
+    out["steps"] = out["steps"] + company_out.pop("steps")
+    out.update(company_out)
+    out["persona"] = r0["persona"]
+    return out
+
+
+def _research_company(company: str | None, domain: str | None, known_url: str | None, persona: str | None, person: str) -> dict:
+    steps: list[dict] = []
+    if not company:
+        return {"company_profile": None, "portfolio": [], "portfolio_status": None, "steps": steps}
+    profile = None
+    is_seed = _is_seed(person)
+    if _live("datasets") and not is_seed:
+        try:
+            profile = company_profile(company, domain, known_url)
+            steps.append({"step": f"{company} on LinkedIn · Datasets", "ok": bool(profile),
+                          "detail": f"{len(profile['updates'])} recent updates" if profile else "page not found"})
+        except Exception as e:
+            _mark_down("datasets", str(e))
+            steps.append({"step": f"{company} LinkedIn page · Datasets", "ok": False, "detail": str(e)[:160]})
+        if persona in ("investor", "accelerator"):
+            try:
+                start_portfolio_job(company, domain)
+                steps.append({"step": f"{company} portfolio · Crunchbase (running in background)", "ok": True, "detail": "1-2 min"})
+            except Exception as e:
+                steps.append({"step": f"{company} portfolio · Crunchbase", "ok": False, "detail": str(e)[:160]})
+    if not profile and is_seed:
+        demo = _demo_intel(person) or {}
+        if demo.get("company"):
+            profile = {**demo["company"], "updates": demo.get("company_updates", [])}
+            store.save_portfolio(company, demo.get("portfolio", []))
+            if demo.get("portfolio"):
+                store.set_company_job(company, None, f"ready: {len(demo['portfolio'])} investments")
+            steps.append({"step": f"{company}: cached demo company intel", "ok": True, "detail": "seed data"})
+    if profile:
+        store.save_company(company, profile, profile.get("updates", []))
+    ci = store.company_intel(company)
+    return {"company_profile": {**ci, "updates": (profile or {}).get("updates", [])} if (profile or ci.get("about")) else None,
+            "portfolio": ci.get("portfolio", []), "portfolio_status": ci.get("portfolio_status"), "steps": steps}
+
+
+def _research_person(person: str, linkedin: str | None, company: str | None) -> dict:
     steps, profile, posts, news = [], None, [], []
 
-    if not linkedin and _live("serp"):
+    if not linkedin and not _is_seed(person) and _live("serp"):
         try:
             linkedin = find_linkedin(person, company)
             steps.append({"step": "Found LinkedIn via Google · SERP", "ok": bool(linkedin), "detail": linkedin})
         except Exception as e:
             _mark_down("serp", str(e))
             steps.append({"step": "LinkedIn search · SERP", "ok": False, "detail": str(e)[:160]})
-    if linkedin and "-demo" not in linkedin and _live("datasets"):  # seed people have fake -demo handles
+    if linkedin and "-demo" not in linkedin and not _is_seed(person) and _live("datasets"):  # seed people are fictional
         try:
             profile = linkedin_profile(linkedin)
             posts = profile.pop("posts", [])
@@ -134,7 +275,7 @@ def research(person: str) -> dict:
         except Exception as e:
             _mark_down("datasets", str(e))
             steps.append({"step": "LinkedIn profile · Datasets", "ok": False, "detail": str(e)[:160]})
-    if company and _live("serp"):
+    if company and not _is_seed(person) and _live("serp"):
         try:
             news = fresh_news(company)
             steps.append({"step": f"{company} news, past 7 days · SERP", "ok": True, "detail": f"{len(news)} articles"})
@@ -151,6 +292,12 @@ def research(person: str) -> dict:
     store.save_intel(person, company, profile, posts, news)
     return {"person": person, "company": company, "linkedin": linkedin or (profile or {}).get("url"),
             "headline": (profile or {}).get("headline"), "posts": posts, "news": news, "steps": steps}
+
+
+def _is_seed(person: str) -> bool:
+    """Fictional seed people: never scrape the live web for them (their companies don't exist)."""
+    path = settings.SEED_DIR / "intel" / "personas.json"
+    return _demo_intel(person) is not None or (path.exists() and person in json.loads(path.read_text()))
 
 
 def _demo_intel(person: str) -> dict | None:

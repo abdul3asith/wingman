@@ -6,6 +6,8 @@ Uses the teammate's FalkorDB helper (app.graph.db.run); adds nodes the base sche
 (:Person {linkedin, headline})-[:POSTED]->(:Post {url, text, posted_at, source})
 (:Company)-[:IN_NEWS]->(:News {url, title, published_at})
 (:Draft {scheduled_at})
+(:Person {persona})                                       # investor | accelerator | founder | candidate | other
+(:Company {about, website, industry, size, linkedin})-[:INVESTED_IN]->(:Company)   # portfolio (Crunchbase)
 """
 from datetime import datetime, timezone
 
@@ -114,6 +116,100 @@ def person_intel(person: str) -> dict:
         {"p": person},
     )
     return rows[0] if rows else {"linkedin": None, "headline": None, "company": None, "posts": [], "news": []}
+
+
+# ---------------------------------------------------------------- founder persona
+
+# The demo persona's three audiences; each is an Intent so grouping, FITS edges and drafts reuse one path.
+PERSONA_INTENTS = {
+    "investor": "Raise from investors & accelerators",
+    "accelerator": "Raise from investors & accelerators",
+    "founder": "Partner with fellow founders",
+    "candidate": "Hire our founding team",
+}
+PERSONA_ASK = {"investor": "pitch", "accelerator": "accelerator", "founder": "founder_coffee", "candidate": "recruit"}
+
+
+def set_persona(person: str, persona: str) -> None:
+    run("MATCH (p:Person {name:$p}) SET p.persona=$x", {"p": person, "x": persona})
+
+
+def personas() -> dict[str, str]:
+    return {r["n"]: r["x"] for r in run("MATCH (p:Person) WHERE p.persona IS NOT NULL RETURN p.name AS n, p.persona AS x")}
+
+
+def ensure_persona(uid: str = UID) -> None:
+    """Founder persona: the three audience intents, and personas for seed people (seed/intel/personas.json)."""
+    if get_intents(uid) != list(dict.fromkeys(PERSONA_INTENTS.values())):
+        set_intents(list(dict.fromkeys(PERSONA_INTENTS.values())), uid)
+    path = settings.SEED_DIR / "intel" / "personas.json"
+    if path.exists():
+        import json
+
+        known = personas()
+        for name, persona in json.loads(path.read_text()).items():
+            if name not in known:
+                set_persona(name, persona)
+
+
+# ---------------------------------------------------------------- company intel (Bright Data)
+
+
+def save_company(company: str, profile: dict, updates: list[dict]) -> None:
+    run(
+        """MERGE (c:Company {name:$c}) SET c.about=coalesce($about, c.about), c.website=coalesce($web, c.website),
+           c.industry=coalesce($ind, c.industry), c.size=coalesce($size, c.size), c.linkedin=coalesce($li, c.linkedin),
+           c.intel_at=$now""",
+        {"c": company, "about": profile.get("about"), "web": profile.get("website"), "ind": profile.get("industry"),
+         "size": profile.get("size"), "li": profile.get("linkedin"), "now": _now()},
+    )
+    for u in updates:
+        run(
+            """MERGE (c:Company {name:$c}) MERGE (x:News {url:$url})
+               SET x.title=$title, x.published_at=$at, x.kind='update', x.scraped_at=$now MERGE (c)-[:IN_NEWS]->(x)""",
+            {"c": company, "url": u["url"], "title": u["title"], "at": u.get("published_at"), "now": _now()},
+        )
+
+
+def save_portfolio(investor_company: str, items: list[dict]) -> None:
+    """items: [{name, round?, date?, url?}] -> (:Company)-[:INVESTED_IN {round, date}]->(:Company)."""
+    for it in items:
+        run(
+            """MERGE (f:Company {name:$f}) MERGE (c:Company {name:$c})
+               MERGE (f)-[r:INVESTED_IN]->(c) SET r.round=$round, r.date=$date, c.crunchbase=coalesce($url, c.crunchbase)""",
+            {"f": investor_company, "c": it["name"], "round": it.get("round"), "date": it.get("date"), "url": it.get("url")},
+        )
+
+
+def set_company_job(company: str, snapshot_id: str | None, status: str) -> None:
+    run("MERGE (c:Company {name:$c}) SET c.portfolio_job=$s, c.portfolio_status=$st", {"c": company, "s": snapshot_id, "st": status})
+
+
+def company_intel(company: str) -> dict:
+    rows = run(
+        """MATCH (c:Company {name:$c})
+           OPTIONAL MATCH (c)-[r:INVESTED_IN]->(pc:Company)
+           OPTIONAL MATCH (pc)<-[:WORKS_AT]-(met:Person)
+           WITH c, pc, r, collect(DISTINCT met.name) AS met
+           RETURN c.about AS about, c.website AS website, c.industry AS industry, c.size AS size, c.linkedin AS linkedin,
+                  c.portfolio_status AS portfolio_status,
+                  collect(CASE WHEN pc IS NULL THEN NULL ELSE {name: pc.name, round: r.round, date: r.date, people_you_met: met} END) AS portfolio""",
+        {"c": company},
+    )
+    out = rows[0] if rows else {}
+    out["portfolio"] = [p for p in out.get("portfolio") or [] if p]
+    return out
+
+
+def warm_paths(uid: str = UID) -> list[dict]:
+    """Investors you met whose fund backs a company where you also met someone: the graph's warm-intro paths."""
+    return run(
+        """MATCH (:User {id:$uid})-[:HAD]->(:Session)-[:WITH]->(inv:Person)-[:WORKS_AT]->(f:Company)-[:INVESTED_IN]->(c:Company)
+           MATCH (:User {id:$uid})-[:HAD]->(:Session)-[:WITH]->(p:Person)-[:WORKS_AT]->(c)
+           WHERE p <> inv
+           RETURN DISTINCT inv.name AS investor, f.name AS fund, c.name AS company, p.name AS person""",
+        {"uid": uid},
+    )
 
 
 # ---------------------------------------------------------------- scheduling

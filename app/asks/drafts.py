@@ -26,10 +26,13 @@ SYSTEM = "You write short, specific, human follow-up emails. Use only facts give
 
 PROMPT = """Write a plain-text follow-up email from {user} to {person} ({role} at {company}). They met at {event}.
 
+{user} is the founder of {startup}, {pitch} ({stage}; hiring {hiring}).
+
 ASK TYPE: {ask_type}
 {ask_instruction}
 {user}'S GOAL WITH THIS PERSON: {intent}
 WHY NOW (if present, reference it in the second sentence with its URL): {fresh}
+THEIR PORTFOLIO (investors/accelerators: if present, name this company in one clause to show you did your homework): {portfolio}
 
 HARD RULES
 - Under {max_words} words including greeting and sign-off. Exactly one clear ask.
@@ -50,6 +53,11 @@ ASK_INSTRUCTIONS = {
     "update": "Share the deck ({attachment}), offer to send short progress updates, and ask for a 20-minute call.",
     "feedback_collab": "Ask for 20 minutes of product feedback on what you're building. Link the demo: {attachment}",
     "thank_you": "Just say thanks and keep the door open. No ask beyond staying in touch.",
+    # founder persona
+    "pitch": "Investor: one line on {startup} and traction, link the deck ({attachment}), ask for a 30-minute meeting about the round.",
+    "accelerator": "Accelerator partner: say you're applying, link the deck ({attachment}), ask for 15 minutes of office hours before the deadline.",
+    "founder_coffee": "Fellow founder: propose coffee to swap notes and look for a concrete way to help each other (intro, integration, shared customers).",
+    "recruit": "Potential hire: say what {startup} is building, that you're hiring {hiring}, and ask for a no-pressure 20-minute chat.",
 }
 
 
@@ -78,6 +86,7 @@ def generate(person_filter: str | None = None, uid: str = settings.USER_ID, name
     radar = graph.referral_radar(uid)
     promises = graph.open_promises(uid)
     overrides = store.ask_overrides()
+    personas = store.personas()
     wanted = set(names or []) | ({person_filter} if person_filter else set())
     drafts: list[Draft] = []
     for p in people:
@@ -90,12 +99,31 @@ def generate(person_filter: str | None = None, uid: str = settings.USER_ID, name
         mine = list({pr["text"].lower(): pr for pr in promises if pr["person"] == p["name"] and pr["by"] == "me"}.values())
         intel = store.person_intel(p["name"])
         fresh = (intel["posts"] or [None])[0] or _news_as_fresh((intel["news"] or [None])[0])
-        d = build(p, cg[0] if cg else None, jobs[0] if jobs else None, mine, overrides.get(p["name"]), fresh)
+        persona = personas.get(p["name"])
+        override = overrides.get(p["name"]) or (
+            {"ask_type": store.PERSONA_ASK[persona], "intent": store.PERSONA_INTENTS[persona]} if persona in store.PERSONA_ASK else None)
+        portfolio = _portfolio_line(p.get("company")) if persona in ("investor", "accelerator") else ""
+        d = build(p, cg[0] if cg else None, jobs[0] if jobs else None, mine, override, fresh, portfolio)
         graph.write_draft(d, uid)
         if fresh and fresh.get("node") == "Post":
             store.run("MATCH (d:Draft {id:$id}) MATCH (x:Post {url:$u}) MERGE (d)-[:BECAUSE]->(x)", {"id": d.id, "u": fresh["url"]})
         drafts.append(d)
     return drafts
+
+
+def _portfolio_line(company: str | None) -> str:
+    """'Foundry Lane backs Driftwood AI (Pre-Seed)' — prefer a portfolio company where we met someone."""
+    from app.agent import store
+
+    if not company:
+        return ""
+    pf = store.company_intel(company).get("portfolio") or []
+    pf.sort(key=lambda x: -len(x.get("people_you_met") or []))
+    if not pf:
+        return ""
+    top = pf[0]
+    met = f", where you also met {top['people_you_met'][0]}" if top.get("people_you_met") else ""
+    return f"{company} backs {top['name']}" + (f" ({top['round']})" if top.get("round") else "") + met
 
 
 def _news_as_fresh(n: dict | None) -> dict | None:
@@ -109,7 +137,7 @@ def _short(text: str, n: int = 14) -> str:
 
 
 def build(p: dict, hook: CommonGround | None, job: dict | None, my_promises: list[dict],
-          override: dict | None = None, fresh: dict | None = None) -> Draft:
+          override: dict | None = None, fresh: dict | None = None, portfolio: str = "") -> Draft:
     if override and override.get("ask_type"):
         ask_type = override["ask_type"]
         if ask_type == "referral" and not job:
@@ -125,6 +153,8 @@ def build(p: dict, hook: CommonGround | None, job: dict | None, my_promises: lis
                             doc_title=_short(fresh["text"]), doc_url=fresh["url"], doc_kind=fresh["label"])
         fresh = None
     ctx = {
+        "startup": settings.STARTUP_NAME, "pitch": settings.STARTUP_PITCH, "stage": settings.STARTUP_STAGE,
+        "hiring": settings.HIRING_FOR, "portfolio": portfolio,
         "intent": (override or {}).get("intent") or "",
         "fresh": f'{fresh["label"]}: "{_short(fresh["text"])}" ({fresh["url"]})' if fresh else "",
         "fresh_url": fresh["url"] if fresh else "",
@@ -242,6 +272,17 @@ def _template(ctx: dict, hook: CommonGround | None, job: dict | None) -> tuple[s
         "update": (f"{ctx['user']}: deck + updates", f"Here's the deck: {att}. Happy to send short progress updates; open to a 20-minute call?"),
         "feedback_collab": (f"Your take on {topic}?", f"I'd value your product read on what I'm building. Quick demo: {att}. Open to a 20-minute feedback session?"),
         "thank_you": (f"Thanks for the chat at {ctx['event']}", "Thanks again for the conversation; let's stay in touch."),
+        # founder persona
+        "pitch": (f"{ctx['startup']}: {ctx['stage']}",
+                  (f"I saw {ctx['portfolio']}. " if ctx["portfolio"] else "")
+                  + f"We're building {ctx['startup']}, {ctx['pitch']}, and {ctx['stage']}. Deck: {att}. Open to 30 minutes next week?"),
+        "accelerator": (f"{ctx['startup']} applying to {c}",
+                        (f"I saw {ctx['portfolio']}. " if ctx["portfolio"] else "")
+                        + f"We're applying with {ctx['startup']}, {ctx['pitch']}. Deck: {att}. Could I grab 15 minutes of office hours before the deadline?"),
+        "founder_coffee": (f"Founder coffee: {ctx['startup']} x {c}",
+                           f"I'm building {ctx['startup']}, {ctx['pitch']}. Coffee next week to swap notes and see where we can help each other?"),
+        "recruit": (f"Building {ctx['startup']}: coffee?",
+                    f"We're building {ctx['startup']}, {ctx['pitch']}, and hiring {ctx['hiring']}. Up for a no-pressure 20-minute chat?"),
     }
     subject, ask = asks.get(ctx["ask_type"], asks["thank_you"])
     parts = [f"Hi {ctx['first']},", "", opener, "", ask]

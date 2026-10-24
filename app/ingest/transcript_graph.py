@@ -22,6 +22,8 @@ def convert(session_id: str, transcript: str) -> tuple[str, SessionExtract | Non
     graph_bridge.ingest_session(x)
     if linkedin := extract_mod.LINKEDIN.pop(session_id, None):
         store.set_linkedin(x.person.name, linkedin)
+    if persona := extract_mod.PERSONA.pop(session_id, None):
+        store.set_persona(x.person.name, persona)
     return "built", x
 
 
