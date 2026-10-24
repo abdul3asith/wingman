@@ -10,6 +10,7 @@ from app.contract import SessionExtract
 from app.graph import queries
 from app.ingest import extract as extract_mod
 from app.ingest import graph_bridge, transcribe
+from app.ingest.deepgram import TranscriptionError
 
 router = APIRouter(prefix="/sessions", tags=["ingest"])
 
@@ -63,13 +64,19 @@ async def create_session(audio: UploadFile | None = File(None), transcript: str 
 @router.post("/{sid}/process", response_model=SessionExtract)
 def process_session(sid: str, background: BackgroundTasks, sync_enrich: bool = False):
     """Transcribe -> extract -> write to graph -> enrich the company (background unless sync_enrich=true)."""
-    pending = _pending.pop(sid, None)
+    pending = _pending.get(sid)
     if pending is None:
         raise HTTPException(404, f"session {sid} not found or already processed")
-    text = pending["transcript"] or transcribe.transcribe_file(pending["audio_path"])
+    try:
+        text = pending["transcript"] or transcribe.transcribe_file(pending["audio_path"])
+    except TranscriptionError as e:
+        # Keep the upload pending so the user can retry /process.
+        raise HTTPException(502, str(e))
     if not text.strip():
         raise HTTPException(422, "transcription came back empty — try again or use the typed debrief")
-    return _run(sid, text, background, sync_enrich)
+    x = _run(sid, text, background, sync_enrich)
+    _pending.pop(sid, None)  # only forget the upload once it is safely in the graph
+    return x
 
 
 @router.get("")

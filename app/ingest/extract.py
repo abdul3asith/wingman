@@ -35,18 +35,30 @@ class _ExtractOut(BaseModel):
     promises: list[_PromiseOut]
 
 
-PROMPT = """You are reading a voice debrief recorded by {user} right after a conversation at {event}.
-The speaker is the user ("me"). Extract the OTHER person only.
+PROMPT = """You are reading a transcript recorded by {user} at {event}. It is one of two kinds:
 
-Rules:
-- person.role: a short normalized title ("ML Engineer", "Technical Recruiter"). role_class is exactly one of
-  engineer | recruiter | founder | investor | pm_design | other.
+1. A speaker-labeled recording of a conversation ("Speaker 0: ...", "Speaker 1: ...") between {user} and
+   someone else. {user} is the person holding the recorder and may never say their own name. Work in two steps.
+   Step 1: decide which label is {user} (call it ME) and which is the other person (call it THEM), using
+   introductions ("I'm ..."), who is asking about whom, and {user}'s background ({skills}). THEM is usually the
+   one who states their company, hands over their email, or offers a referral or job; ME is usually the one asking
+   about them and collecting the contact. Extract THEM as `person`; ME is never `person`.
+   Step 2: for every promise, look at the label on the line where it was said. Label THEM -> by="them".
+   Label ME -> by="me". Example: if Speaker 1 is ME and Speaker 0 is THEM, then "Speaker 0: I'll send you the
+   blog post" gives by="them", and "Speaker 1: I'll send my repo" gives by="me".
+   If more than two speakers appear, THEM is the person {user} talked with the most.
+2. A solo voice debrief spoken by {user} about a conversation they just had. The speaker is {user} ("me");
+   extract the person they describe; by="me" for what {user} promised, by="them" for what that person promised.
+
+In both cases return exactly one person (the OTHER person, never {user}) with:
+- role: a short normalized job title ("ML Engineer", "Head of Platform Engineering"). role_class is exactly one of
+  engineer | recruiter | founder | investor | pm_design | other, from their actual job: an engineering leader is
+  "engineer", not "recruiter", even if they offered a referral.
 - company: the name as spoken, best-effort spelling (it is resolved against the web later). domain only if it was
   said or is unambiguous, else null.
 - topics: 2-4 short lowercase noun phrases, no duplicates, specific over generic ("kv cache", "inference serving",
   not "ai" or "tech").
-- promises: anything either side committed to. by="me" when {user} promised it, by="them" when the other person did.
-  Phrase each as a short imperative ("Send the cold start blog post").
+- promises: every promise either side made, each as a short imperative ("Send the cold starts blog post").
 - summary: one factual sentence.
 - email: only if it was explicitly said; spoken forms like "maya at parallaxlabs dot ai" become maya@parallaxlabs.ai.
   NEVER guess or construct an email. Any unknown field is null.
@@ -79,7 +91,10 @@ def extract(session_id: str, transcript: str, started_at: str | None = None) -> 
     if settings.MOCK_MODE:
         out = MOCK_EXTRACT
     else:
-        out = llm.parse(PROMPT.format(user=settings.USER_NAME, event=settings.EVENT_NAME, transcript=transcript), _ExtractOut)
+        prompt = PROMPT.format(
+            user=settings.USER_NAME, event=settings.EVENT_NAME, skills=", ".join(settings.USER_SKILLS), transcript=transcript
+        )
+        out = llm.parse(prompt, _ExtractOut)
         if not _email_was_said(out.person.email, transcript):
             out.person.email = None
     return SessionExtract(

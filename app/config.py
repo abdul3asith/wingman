@@ -27,6 +27,9 @@ class Settings:
     OPENAI_EMBED_MODEL: str = _env("OPENAI_EMBED_MODEL", "text-embedding-3-small")
     EMBED_DIM: int = 1536
 
+    DEEPGRAM_API_KEY: str | None = _env("DEEPGRAM_API_KEY")
+    DEEPGRAM_MODEL: str = _env("DEEPGRAM_MODEL", "nova-3")
+
     BRIGHTDATA_API_KEY: str | None = _env("BRIGHTDATA_API_KEY")
     BRIGHTDATA_SERP_ZONE: str | None = _env("BRIGHTDATA_SERP_ZONE")
     BRIGHTDATA_UNLOCKER_ZONE: str | None = _env("BRIGHTDATA_UNLOCKER_ZONE")
