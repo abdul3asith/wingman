@@ -35,7 +35,9 @@ check("GET / (web UI)", lambda: "html" if "<html" in c.get("/").text.lower() els
 sid = check("POST /sessions (transcript)", lambda: ok(c.post("/sessions", data={"transcript": "smoke test transcript"}))["session_id"])
 extract = check("POST /sessions/{id}/process", lambda: ok(c.post(f"/sessions/{sid}/process", params={"sync_enrich": True})))
 person = extract["person"]["name"] if extract else None
-check("POST /sessions/debrief-text", lambda: ok(c.post("/sessions/debrief-text", json={"text": "typed smoke debrief"}))["person"]["name"])
+check("POST /sessions/debrief-text", lambda: ok(c.post("/sessions/debrief-text", json={
+    "text": "Smoke test: met Jordan Smoke, a backend engineer at Parallax Labs. We talked about GPU inference."}))["person"]["name"])
+check("GET /agent/state", lambda: f"{len(ok(c.get('/agent/state'))['goals'])} goals")
 check("GET /sessions", lambda: f"{len(ok(c.get('/sessions')))} sessions")
 check("GET /sessions/{id}", lambda: ok(c.get(f"/sessions/{sid}"))["person"])
 

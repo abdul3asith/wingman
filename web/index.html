@@ -1,334 +1,534 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>wingman</title>
-<!-- OWNER: Person A. Single page, Tailwind CDN, vanilla JS, no build step. Built for a projector: big, high contrast. -->
-<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wingman</title>
+<!-- OWNER: Person A. One-button voice agent. No build step: Motion (motion.dev) for springs, Canvas + Web Audio for the orb. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Figtree:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/motion@11.11.13/dist/motion.js"></script>
 <style>
-  html { font-size: 17px; }
-  body { background: #0b1020; color: #e8ecf5; }
-  pre { white-space: pre-wrap; font-family: inherit; }
-  .card { background: #131a2e; border: 1px solid #263152; border-radius: 0.75rem; }
-  .muted { color: #9aa6c2; }
-  .chip { display: inline-block; font-size: 0.8rem; padding: 0.1rem 0.55rem; border-radius: 999px; margin: 0 0.25rem 0.25rem 0; background: #1e2847; color: #cdd6ee; }
-  .btn-primary { background: #6d7cff; color: #fff; font-weight: 600; padding: 0.6rem 1.1rem; border-radius: 0.6rem; }
-  .btn-primary:hover { background: #8592ff; }
-  .btn-primary:disabled { opacity: 0.4; }
-  .btn { border: 1px solid #36426b; padding: 0.5rem 0.95rem; border-radius: 0.6rem; color: #dfe5f5; }
-  .btn:hover { border-color: #6d7cff; }
-  a.src { color: #8fb4ff; text-decoration: underline; word-break: break-all; }
-  textarea, input, select { background: #0e1426; border: 1px solid #36426b; border-radius: 0.5rem; color: #e8ecf5; }
-  .tab.active { color: #fff; border-color: #6d7cff; }
-  .spinner { width: 1.1rem; height: 1.1rem; border: 3px solid #36426b; border-top-color: #6d7cff; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; vertical-align: middle; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .rec-dot { width: 0.8rem; height: 0.8rem; background: #ff4d5e; border-radius: 50%; display: inline-block; animation: pulse 1s ease-in-out infinite; }
-  @keyframes pulse { 50% { opacity: 0.3; } }
+/* Layout: sticky voice stage on the left (the one button), a live feed of what the agent did on the right. */
+:root {
+  color-scheme: dark;
+  --ink: #141019;          /* conference-night background */
+  --panel: #1c1624;
+  --panel-2: #241c2e;
+  --line: #342a42;
+  --fg: #f4eef7;
+  --muted: #a99cb8;
+  --voice: #ff7a5c;        /* your voice / primary action */
+  --web: #ffb547;          /* live web: Bright Data */
+  --graph: #4fd1c5;        /* FalkorDB / what we already know */
+  --ok: #6ee7a8;
+  --bad: #ff5d73;
+  --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --body: "Figtree", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --r: 14px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: radial-gradient(1200px 700px at 18% 30%, #22192d 0%, var(--ink) 60%) fixed, var(--ink);
+  color: var(--fg); font: 16px/1.5 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+a { color: inherit; }
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--voice); outline-offset: 3px; border-radius: 8px; }
+
+/* ---------- top bar */
+.top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding-block: 18px 6px; max-width: 1320px; margin: 0 auto; }
+.mark { font: 700 26px/1 var(--display); letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px; }
+.mark i { width: 12px; height: 12px; border-radius: 50%; background: var(--voice); box-shadow: 0 0 18px var(--voice); }
+.event { color: var(--muted); font-size: 15px; }
+.status { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.pill { font: 500 12px/1 var(--mono); letter-spacing: 0.04em; text-transform: uppercase; padding: 7px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); display: inline-flex; align-items: center; gap: 7px; }
+.pill b { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.pill.on b { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+.pill.web.on b { background: var(--web); box-shadow: 0 0 10px var(--web); }
+.pill.off b { background: var(--bad); }
+
+/* ---------- main grid */
+.main { display: grid; grid-template-columns: minmax(320px, 440px) minmax(0, 1fr); gap: 36px; max-width: 1320px; margin: 0 auto; padding-block: 12px 48px; }
+.main > * { min-width: 0; }
+@media (max-width: 900px) { .main { grid-template-columns: minmax(0, 1fr); gap: 20px; } }
+body { overflow-x: hidden; }
+.goal { max-width: 100%; overflow-wrap: anywhere; }
+
+/* ---------- stage */
+.stage { position: sticky; top: 16px; align-self: start; display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; width: 100%; }
+.stage > * { max-width: 100%; }
+@media (max-width: 900px) { .stage { position: static; } }
+.goals { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; min-height: 30px; }
+.goal { font-size: 13px; padding: 5px 11px; border-radius: 999px; background: color-mix(in oklab, var(--voice) 14%, transparent); border: 1px solid color-mix(in oklab, var(--voice) 40%, transparent); }
+.goals .hint { color: var(--muted); font-size: 13px; }
+.orb-wrap { position: relative; width: min(340px, 82vw); aspect-ratio: 1; max-width: 100%; }
+.orb-btn { position: absolute; inset: 0; border: 0; background: none; border-radius: 50%; }
+canvas#orb { width: 100%; height: 100%; display: block; }
+.orb-label { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; font: 700 22px/1.1 var(--display); letter-spacing: -0.01em; text-shadow: 0 2px 18px rgba(0,0,0,.5); }
+.orb-label small { display: block; font: 500 12px/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
+.caption { min-height: 84px; max-width: 400px; display: grid; gap: 8px; }
+.heard { color: var(--muted); font-size: 15px; }
+.heard::before { content: "You  "; font: 500 11px var(--mono); letter-spacing: .08em; color: var(--voice); }
+.reply { font: 500 19px/1.4 var(--display); letter-spacing: -0.01em; text-wrap: balance; }
+.rec-btn { display: inline-flex; align-items: center; gap: 10px; padding: 12px 18px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); font-weight: 600; }
+.rec-btn i { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); }
+.rec-btn.live { border-color: var(--bad); background: color-mix(in oklab, var(--bad) 16%, var(--panel)); }
+.rec-btn.live i { animation: blink 1s infinite; }
+.rec-btn .t { font: 500 13px var(--mono); color: var(--muted); }
+@keyframes blink { 50% { opacity: .25; } }
+.chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 420px; }
+.chip-btn { font-size: 13px; padding: 7px 12px; border-radius: 999px; border: 1px dashed var(--line); background: transparent; color: var(--muted); }
+.chip-btn:hover { color: var(--fg); border-color: var(--voice); }
+.type { display: flex; gap: 8px; width: 100%; max-width: 400px; }
+.type input { flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 10px 16px; color: var(--fg); font: inherit; }
+.type button { border: 0; border-radius: 999px; padding: 0 16px; background: var(--panel-2); }
+
+/* ---------- feed */
+.feed { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 18px 20px; min-width: 0; }
+.card-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.card-h h3 { margin: 0; font: 700 19px/1.2 var(--display); letter-spacing: -0.01em; text-wrap: balance; }
+.kind { font: 500 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; padding: 5px 8px; border-radius: 6px; }
+.kind.graph { color: var(--graph); background: color-mix(in oklab, var(--graph) 14%, transparent); }
+.kind.web { color: var(--web); background: color-mix(in oklab, var(--web) 14%, transparent); }
+.kind.voice { color: var(--voice); background: color-mix(in oklab, var(--voice) 14%, transparent); }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); font-size: 13px; }
+.src { font: 400 13px var(--mono); color: var(--web); text-decoration: none; border-bottom: 1px solid color-mix(in oklab, var(--web) 40%, transparent); word-break: break-all; }
+.src:hover { border-color: var(--web); }
+.tag { display: inline-block; font-size: 12px; padding: 3px 9px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); margin: 0 4px 4px 0; }
+.role { font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--graph); }
+
+.groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.group { background: var(--panel-2); border-radius: 12px; padding: 14px; min-width: 0; }
+.group h4 { margin: 0 0 10px; font: 600 15px/1.3 var(--display); }
+.person { display: grid; gap: 2px; padding: 9px 0; border-top: 1px solid var(--line); }
+.person:first-of-type { border-top: 0; padding-top: 0; }
+.person .why { font-size: 13px; color: var(--muted); }
+
+.intel-grid { display: grid; gap: 14px; }
+.intel { display: grid; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
+.intel:first-child { border-top: 0; padding-top: 0; }
+.steps { display: flex; flex-wrap: wrap; gap: 6px; }
+.step { font: 500 12px var(--mono); padding: 4px 8px; border-radius: 6px; background: color-mix(in oklab, var(--web) 10%, transparent); color: var(--web); }
+.step.fail { color: var(--bad); background: color-mix(in oklab, var(--bad) 10%, transparent); }
+.post { border-left: 2px solid var(--web); padding: 4px 0 4px 12px; display: grid; gap: 4px; }
+.scan { height: 3px; border-radius: 3px; background: linear-gradient(90deg, transparent, var(--web), transparent); background-size: 40% 100%; background-repeat: no-repeat; animation: scan 1.1s linear infinite; }
+@keyframes scan { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+
+.draft { display: grid; gap: 10px; padding-top: 16px; border-top: 1px solid var(--line); }
+.draft:first-child { border-top: 0; padding-top: 0; }
+.draft textarea, .draft input { width: 100%; background: var(--ink); border: 1px solid var(--line); border-radius: 10px; color: var(--fg); font: inherit; padding: 10px 12px; }
+.draft textarea { min-height: 150px; resize: vertical; line-height: 1.55; }
+.draft input.subject { font-weight: 600; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.btn { border: 1px solid var(--line); background: transparent; padding: 9px 14px; border-radius: 10px; font-weight: 600; }
+.btn:hover { border-color: var(--fg); }
+.btn.primary { background: var(--voice); border-color: var(--voice); color: #1a0f0b; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn[disabled] { opacity: .5; cursor: default; }
+.sent { color: var(--ok); font: 500 13px var(--mono); }
+
+.chain { list-style: none; margin: 0; padding: 0; display: grid; }
+.chain li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; }
+.chain .dot { width: 12px; height: 12px; border-radius: 50%; margin: 5px 5px 0; background: var(--graph); position: relative; }
+.chain li:not(:last-child) .dot::after { content: ""; position: absolute; left: 5px; top: 14px; width: 2px; height: 30px; background: var(--line); }
+.chain .dot.web { background: var(--web); }
+.chain .dot.voice { background: var(--voice); }
+.chain .node { padding-bottom: 14px; min-width: 0; }
+.chain .node small { font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-right: 6px; }
+
+.empty { color: var(--muted); display: grid; gap: 10px; }
+.empty ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+.err { border-color: color-mix(in oklab, var(--bad) 50%, var(--line)); }
+@media (prefers-reduced-motion: reduce) { .scan, .rec-btn.live i { animation: none; } }
 </style>
 </head>
-<body class="min-h-screen pb-16">
+<body>
 
-<header class="border-b border-[#263152]">
-  <div class="max-w-6xl mx-auto px-4 pt-4 flex items-baseline gap-4 flex-wrap">
-    <h1 class="text-2xl font-bold tracking-tight">wingman</h1>
-    <span class="muted">voice debrief → graph → follow-ups that open with common ground</span>
+<header class="top">
+  <div class="mark"><i></i>wingman</div>
+  <span class="event" id="event"></span>
+  <div class="status">
+    <span class="pill" id="stGraph"><b></b>Graph</span>
+    <span class="pill web" id="stWeb"><b></b>Live web</span>
+    <span class="pill" id="stMode"><b></b>Mode</span>
   </div>
-  <nav class="max-w-6xl mx-auto px-4 flex gap-6 mt-3">
-    <button data-tab="record" class="tab py-2 border-b-2 border-transparent muted">1 · Record</button>
-    <button data-tab="insights" class="tab py-2 border-b-2 border-transparent muted">2 · Insights</button>
-    <button data-tab="queue" class="tab py-2 border-b-2 border-transparent muted">3 · Ask queue <span id="queueCount" class="chip !bg-[#6d7cff] !text-white hidden"></span></button>
-  </nav>
 </header>
 
-<main class="max-w-6xl mx-auto px-4 py-6">
-
-  <!-- RECORD -->
-  <section id="tab-record" class="panel space-y-5">
-    <div class="card p-5 space-y-4">
-      <h2 class="text-xl font-semibold">Debrief a conversation</h2>
-      <p class="muted">20–60 seconds: who you met, their role and company, what you talked about, what you each promised.</p>
-      <div class="flex items-center gap-4 flex-wrap">
-        <button id="recBtn" class="btn-primary text-lg px-6">● Start recording</button>
-        <span id="recStatus" class="muted"></span>
-      </div>
-      <details id="typedBox" class="pt-1">
-        <summary class="cursor-pointer muted">No mic? Type the debrief instead</summary>
-        <textarea id="typed" rows="4" class="mt-3 w-full p-3" placeholder="Just met Sarah Chen, backend engineer at Modal. We talked about GPU cold starts and KV cache. I promised to send her my benchmark repo."></textarea>
-        <button id="typedBtn" class="btn mt-2">Process typed debrief</button>
-      </details>
+<main class="main">
+  <!-- STAGE: the one button -->
+  <section class="stage" aria-label="Voice agent">
+    <div class="goals" id="goals"><span class="hint">Tell me your goals for the conference</span></div>
+    <div class="orb-wrap">
+      <canvas id="orb" width="680" height="680" aria-hidden="true"></canvas>
+      <button class="orb-btn" id="orbBtn" aria-label="Talk to Wingman (space bar)"></button>
+      <div class="orb-label" id="orbLabel"><span>Tap to talk<small>or hold space</small></span></div>
     </div>
-    <div id="extractCard" class="hidden card p-5 space-y-3"></div>
+    <div class="caption" aria-live="polite">
+      <div class="heard" id="heard" hidden></div>
+      <div class="reply" id="reply">Hi. Tell me what you want out of this conference, and I'll handle the follow-ups.</div>
+    </div>
+    <button class="rec-btn" id="recBtn"><i></i><span id="recText">Record a conversation</span><span class="t" id="recTime"></span></button>
+    <div class="chips" id="chips"></div>
+    <form class="type" id="typeForm">
+      <input id="typeInput" placeholder="…or type to Wingman" autocomplete="off" aria-label="Message Wingman">
+      <button type="submit">Send</button>
+    </form>
   </section>
 
-  <!-- INSIGHTS -->
-  <section id="tab-insights" class="panel hidden space-y-6">
-    <div class="flex items-center gap-3 flex-wrap">
-      <h2 class="text-xl font-semibold">Common Ground</h2>
-      <span class="muted">topics you discussed that the company has published about</span>
-      <button id="genAllBtn" class="btn-primary ml-auto">Generate all follow-ups</button>
-    </div>
-    <div id="cgList" class="grid md:grid-cols-2 gap-4"></div>
-
-    <div>
-      <h2 class="text-xl font-semibold">Referral Radar</h2>
-      <p class="muted mb-3">engineers you met at companies hiring for your skills</p>
-      <div id="radar" class="grid md:grid-cols-2 gap-4"></div>
-    </div>
-
-    <div>
-      <h2 class="text-xl font-semibold mb-3">Ask the graph</h2>
-      <div id="presets" class="flex flex-wrap gap-2"></div>
-      <div id="presetOut" class="mt-3"></div>
-    </div>
-  </section>
-
-  <!-- QUEUE -->
-  <section id="tab-queue" class="panel hidden space-y-4">
-    <div class="flex items-center gap-3 flex-wrap">
-      <h2 class="text-xl font-semibold">Ask queue</h2>
-      <span class="muted">nothing sends until you click Approve</span>
-      <select id="queueFilter" class="ml-auto px-2 py-1"><option value="pending">pending</option><option value="sent">sent</option><option value="skipped">skipped</option><option value="all">all</option></select>
-    </div>
-    <div id="queue" class="space-y-4"></div>
+  <!-- FEED: what the agent did -->
+  <section class="feed" id="feed" aria-label="What Wingman did">
+    <article class="card empty" id="welcome">
+      <div class="card-h"><h3>Your conference, handled by voice</h3></div>
+      <ol>
+        <li><b>Before:</b> “I want an LLM inference job and two seed investors.”</li>
+        <li><b>During:</b> tap <b>Record a conversation</b> when you meet someone.</li>
+        <li><b>After:</b> “Who fits my goals?” → “Research them” → “Draft follow-ups” → “Schedule for Monday 9am.”</li>
+      </ol>
+    </article>
   </section>
 </main>
 
-<!-- STATUS BAR -->
-<footer class="fixed bottom-0 inset-x-0 bg-[#0e1426] border-t border-[#263152] text-sm">
-  <div class="max-w-6xl mx-auto px-4 py-2 flex items-center gap-4 flex-wrap">
-    <span id="stGraph"><span class="spinner !w-3 !h-3"></span> FalkorDB…</span>
-    <span id="stMode" class="chip"></span>
-    <span id="stCounts" class="muted"></span>
-    <a id="stBrowser" class="src ml-auto" target="_blank" href="http://localhost:3000">FalkorDB Browser ↗</a>
-  </div>
-</footer>
-
 <script>
-const $ = (s) => document.querySelector(s);
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const chip = (t, style = '') => `<span class="chip" style="${style}">${esc(t)}</span>`;
-const link = (url, text) => url ? `<a class="src" target="_blank" rel="noopener" href="${esc(url)}">${esc(text || url)}</a>` : esc(text);
-const linkify = (s) => esc(s).replace(/(https?:\/\/[^\s)<]+)/g, '<a class="src" target="_blank" rel="noopener" href="$1">$1</a>');
-const ROLE_COLORS = { engineer: '#2a4d8f', recruiter: '#6b3d8f', founder: '#8f5a2a', investor: '#2a7a5a', pm_design: '#8f2a5a', other: '#3a4466' };
-const roleChip = (rc) => chip(rc, `background:${ROLE_COLORS[rc] || ROLE_COLORS.other};color:#fff`);
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const link = (url, text) => url ? `<a class="src" href="${esc(url)}" target="_blank" rel="noopener">${esc(text || url.replace(/^https?:\/\/(www\.)?/, ''))}</a>` : '';
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const M = window.Motion || {};
+const CSSVAR = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
 async function api(path, opts = {}) {
-  if (opts.json !== undefined) { opts = { ...opts, method: opts.method || 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(opts.json) }; }
+  if (opts.json !== undefined) opts = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(opts.json) };
   const res = await fetch(path, opts);
-  if (!res.ok) { let d = await res.text(); try { d = JSON.parse(d).detail || d; } catch {} throw new Error(`${res.status}: ${String(d).slice(0, 300)}`); }
-  return res.json();
-}
-const busy = (el, label) => { el.disabled = true; el.dataset.label = el.innerHTML; el.innerHTML = `<span class="spinner"></span> ${label}`; };
-const done = (el) => { el.disabled = false; el.innerHTML = el.dataset.label; };
-
-// ---------------------------------------------------------------- tabs
-document.querySelectorAll('.tab').forEach(b => b.onclick = () => showTab(b.dataset.tab));
-function showTab(name) {
-  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('hidden', p.id !== 'tab-' + name));
-  ({ insights: loadInsights, queue: loadQueue })[name]?.();
+  if (!res.ok) { let d = await res.text(); try { d = JSON.parse(d).detail || d; } catch {} throw new Error(String(d).slice(0, 240)); }
+  return res.headers.get('content-type')?.includes('json') ? res.json() : res;
 }
 
-// ---------------------------------------------------------------- status bar
-async function refreshStatus() {
+// ---------------------------------------------------------------- motion helpers (content stays visible if Motion is missing)
+function enter(el, i = 0) {
+  if (REDUCED || !M.animate) return;
+  M.animate(el, { opacity: [0, 1], transform: ['translateY(18px) scale(0.98)', 'translateY(0) scale(1)'] },
+    { duration: 0.55, delay: i * 0.07, ease: [0.22, 1, 0.36, 1] });
+}
+function stagger(nodes) { [...nodes].forEach((n, i) => enter(n, i)); }
+
+// ---------------------------------------------------------------- orb (Canvas + Web Audio)
+const orb = { mode: 'idle', level: 0, target: 0, t: 0 };
+const cv = $('#orb'), ctx2d = cv.getContext('2d');
+let audioCtx = null, analyser = null, freq = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioCtx.createAnalyser(); analyser.fftSize = 256; freq = new Uint8Array(analyser.frequencyBinCount);
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+function readLevel() {
+  if (!analyser || !(orb.mode === 'listening' || orb.mode === 'speaking' || orb.mode === 'recording')) return 0;
+  analyser.getByteFrequencyData(freq);
+  let s = 0; for (let i = 2; i < 48; i++) s += freq[i];
+  return Math.min(1, s / (46 * 160));
+}
+const MODE_COLOR = { idle: '--voice', listening: '--voice', thinking: '--graph', speaking: '--web', recording: '--bad' };
+function drawOrb() {
+  orb.t += REDUCED ? 0.004 : 0.016;
+  orb.target = readLevel();
+  orb.level += (orb.target - orb.level) * 0.18;
+  const W = cv.width, C = W / 2, base = W * 0.27;
+  const color = CSSVAR(MODE_COLOR[orb.mode] || '--voice');
+  ctx2d.clearRect(0, 0, W, W);
+  // halo
+  const g = ctx2d.createRadialGradient(C, C, base * 0.4, C, C, base * 1.9);
+  g.addColorStop(0, color + '55'); g.addColorStop(1, color + '00');
+  ctx2d.fillStyle = g; ctx2d.fillRect(0, 0, W, W);
+  // blob: 3 layered rings whose radius wobbles with time + voice level
+  for (let layer = 2; layer >= 0; layer--) {
+    const amp = (orb.mode === 'thinking' ? 0.05 : 0.035) + orb.level * 0.22 + layer * 0.02;
+    const breathe = orb.mode === 'idle' ? Math.sin(orb.t * 1.6) * 0.02 : 0;
+    ctx2d.beginPath();
+    for (let a = 0; a <= Math.PI * 2 + 0.01; a += Math.PI / 90) {
+      const n = Math.sin(a * 3 + orb.t * (2 + layer)) * 0.5 + Math.sin(a * 5 - orb.t * 1.3 + layer) * 0.35 + Math.sin(a * 2 + orb.t * 0.7) * 0.15;
+      const r = base * (1 + breathe + layer * 0.08) * (1 + n * amp);
+      const x = C + Math.cos(a) * r, y = C + Math.sin(a) * r;
+      a === 0 ? ctx2d.moveTo(x, y) : ctx2d.lineTo(x, y);
+    }
+    ctx2d.closePath();
+    ctx2d.fillStyle = layer === 0 ? color : color + (layer === 1 ? '44' : '22');
+    ctx2d.fill();
+  }
+  // thinking: orbiting graph dots
+  if (orb.mode === 'thinking') {
+    for (let i = 0; i < 6; i++) {
+      const a = orb.t * 2.2 + i * Math.PI / 3, r = base * 1.42;
+      ctx2d.beginPath(); ctx2d.arc(C + Math.cos(a) * r, C + Math.sin(a) * r, 7, 0, Math.PI * 2);
+      ctx2d.fillStyle = CSSVAR('--graph'); ctx2d.fill();
+    }
+  }
+  requestAnimationFrame(drawOrb);
+}
+requestAnimationFrame(drawOrb);
+
+const LABELS = {
+  idle: ['Tap to talk', 'or hold space'], listening: ['Listening…', 'tap to send'], thinking: ['Thinking…', 'graph + live web'],
+  speaking: ['Speaking', 'tap to interrupt'], recording: ['Recording', 'conversation in progress'],
+};
+function setMode(m) {
+  orb.mode = m;
+  const [a, b] = LABELS[m]; $('#orbLabel').innerHTML = `<span>${a}<small>${b}</small></span>`;
+}
+
+// ---------------------------------------------------------------- talking
+let cid = null, talkRec = null, talkStream = null, playing = null;
+async function startListening() {
+  stopSpeaking();
+  ensureAudio();
+  try { talkStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch { say('I can’t reach the microphone. Type to me below instead.'); return; }
+  audioCtx.createMediaStreamSource(talkStream).connect(analyser);
+  const chunks = [];
+  talkRec = new MediaRecorder(talkStream);
+  talkRec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  talkRec.onstop = () => { talkStream.getTracks().forEach(t => t.stop()); send(new Blob(chunks, { type: talkRec.mimeType || 'audio/webm' })); };
+  talkRec.start(); setMode('listening');
+}
+function stopListening() { if (talkRec && talkRec.state === 'recording') talkRec.stop(); }
+
+async function send(input) {
+  setMode('thinking');
+  const fd = new FormData();
+  if (typeof input === 'string') fd.append('text', input); else fd.append('audio', input, 'talk.webm');
+  if (cid) fd.append('conversation_id', cid);
   try {
-    const h = await api('/health');
-    const ok = h.graph_status === 'ok';
-    $('#stGraph').innerHTML = ok ? '<span style="color:#4ade80">●</span> FalkorDB connected' : '<span style="color:#ff4d5e">●</span> FalkorDB down — run <code>make up</code>';
-    $('#stMode').textContent = h.mock_mode ? 'MOCK MODE' : 'LIVE';
-    $('#stMode').style.cssText = h.mock_mode ? 'background:#7a5b12;color:#fff' : 'background:#1f6b45;color:#fff';
-    if (h.counts) $('#stCounts').textContent = `${h.counts.Person} people · ${h.counts.Company} companies · ${h.counts.WebDoc} web docs · ${h.counts.Draft} drafts`;
-    if (h.falkordb_ui) $('#stBrowser').href = h.falkordb_ui;
-  } catch { $('#stGraph').innerHTML = '<span style="color:#ff4d5e">●</span> API unreachable'; }
+    const out = await api('/agent/talk', { method: 'POST', body: fd });
+    cid = out.conversation_id;
+    showHeard(out.heard);
+    renderEvents(out.ui || []);
+    say(out.reply);
+  } catch (e) { setMode('idle'); say(e.message, false); }
 }
-refreshStatus(); setInterval(refreshStatus, 10000);
 
-// ---------------------------------------------------------------- record
-let recorder = null, chunks = [], startedAt = 0, timer = null;
+function showHeard(text) { const h = $('#heard'); h.hidden = !text; h.textContent = text || ''; }
+function typeReply(text) {
+  const el = $('#reply');
+  if (REDUCED) { el.textContent = text; return; }
+  const words = text.split(' '); el.textContent = '';
+  words.forEach((w, i) => setTimeout(() => { el.textContent += (i ? ' ' : '') + w; }, i * 55));
+}
+async function say(text, voice = true) {
+  typeReply(text);
+  if (!voice) return;
+  setMode('speaking');
+  try {
+    const res = await api('/agent/speak', { json: { text } });
+    const url = URL.createObjectURL(await res.blob());
+    playing = new Audio(url);
+    ensureAudio();
+    try {
+      // playback -> speakers and -> analyser (for the orb). Never analyser -> speakers: the mic feeds it too.
+      const src = audioCtx.createMediaElementSource(playing); src.connect(audioCtx.destination); src.connect(analyser);
+    } catch {}
+    playing.onended = () => { setMode('idle'); playing = null; };
+    await playing.play();
+  } catch {
+    if ('speechSynthesis' in window) {
+      const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; u.onend = () => setMode('idle'); speechSynthesis.speak(u);
+    } else setMode('idle');
+  }
+}
+function stopSpeaking() { if (playing) { playing.pause(); playing = null; } if ('speechSynthesis' in window) speechSynthesis.cancel(); }
+
+$('#orbBtn').onclick = () => {
+  if (orb.mode === 'listening') stopListening();
+  else if (orb.mode === 'speaking') { stopSpeaking(); setMode('idle'); }
+  else if (orb.mode === 'idle') startListening();
+};
+let spaceDown = false;
+addEventListener('keydown', (e) => {
+  if (e.code !== 'Space' || e.repeat || e.target.matches('input, textarea')) return;
+  e.preventDefault(); if (!spaceDown && orb.mode !== 'thinking' && orb.mode !== 'recording') { spaceDown = true; startListening(); }
+});
+addEventListener('keyup', (e) => { if (e.code === 'Space' && spaceDown) { spaceDown = false; stopListening(); } });
+$('#typeForm').onsubmit = (e) => { e.preventDefault(); const v = $('#typeInput').value.trim(); if (!v) return; $('#typeInput').value = ''; showHeard(v); send(v); };
+
+const SUGGEST = ['I want an LLM inference job and seed investors', 'Who fits my goals?', 'Research my job search people', 'Draft follow-ups for my job search', 'Schedule them for Monday 9am'];
+$('#chips').innerHTML = SUGGEST.map(s => `<button class="chip-btn" data-say="${esc(s)}">${esc(s)}</button>`).join('');
+
+// ---------------------------------------------------------------- recording a real conversation
+let convRec = null, convStart = 0, convTimer = null;
 $('#recBtn').onclick = async () => {
-  if (recorder && recorder.state === 'recording') { recorder.stop(); return; }
+  if (convRec && convRec.state === 'recording') { convRec.stop(); return; }
+  stopSpeaking(); ensureAudio();
   let stream;
-  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-  catch (e) { $('#recStatus').textContent = 'Mic unavailable — use the typed debrief below.'; $('#typedBox').open = true; return; }
-  recorder = new MediaRecorder(stream); chunks = [];
-  recorder.ondataavailable = e => e.data.size && chunks.push(e.data);
-  recorder.onstop = async () => {
-    clearInterval(timer); stream.getTracks().forEach(t => t.stop());
-    $('#recBtn').textContent = '● Start recording';
-    const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
-    await processAudio(blob);
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch { say('I can’t reach the microphone.', false); return; }
+  audioCtx.createMediaStreamSource(stream).connect(analyser);
+  const chunks = [];
+  convRec = new MediaRecorder(stream);
+  convRec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  convRec.onstop = async () => {
+    clearInterval(convTimer); stream.getTracks().forEach(t => t.stop());
+    $('#recBtn').classList.remove('live'); $('#recText').textContent = 'Record a conversation'; $('#recTime').textContent = '';
+    await ingestConversation(new Blob(chunks, { type: convRec.mimeType || 'audio/webm' }));
   };
-  recorder.start(); startedAt = Date.now();
-  $('#recBtn').textContent = '■ End & process';
-  timer = setInterval(() => $('#recStatus').innerHTML = `<span class="rec-dot"></span> Recording… ${Math.round((Date.now() - startedAt) / 1000)}s`, 250);
+  convRec.start(); convStart = Date.now(); setMode('recording');
+  $('#recBtn').classList.add('live'); $('#recText').textContent = 'Stop & save';
+  convTimer = setInterval(() => { const s = Math.round((Date.now() - convStart) / 1000); $('#recTime').textContent = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; }, 250);
 };
 
-async function processAudio(blob) {
-  const btn = $('#recBtn'); busy(btn, 'Transcribing & extracting…'); $('#recStatus').textContent = '';
+async function ingestConversation(blob) {
+  setMode('thinking'); typeReply('Transcribing and saving who you met…');
   try {
-    const fd = new FormData(); fd.append('audio', blob, 'debrief.webm');
+    const fd = new FormData(); fd.append('audio', blob, 'conversation.webm');
     const { session_id } = await api('/sessions', { method: 'POST', body: fd });
-    renderExtract(await api(`/sessions/${session_id}/process?sync_enrich=true`, { method: 'POST' }));
-  } catch (e) { $('#recStatus').textContent = `Failed: ${e.message}. Try again or type it below.`; $('#typedBox').open = true; }
-  done(btn);
+    const x = await api(`/sessions/${session_id}/process`, { method: 'POST' });
+    const card = addCard(metCard(x));
+    setMode('idle');
+    say(`Got it: ${x.person.name}${x.company ? ' from ' + x.company.name : ''}. I'm checking the live web for them now.`);
+    const scan = $('.scan-slot', card); scan.innerHTML = '<div class="scan"></div><div class="mono muted">Bright Data: LinkedIn + this week’s news…</div>';
+    const r = await api('/agent/research', { json: { name: x.person.name } });
+    scan.innerHTML = intelBlock(r); enter(scan);
+    refreshState();
+  } catch (e) { setMode('idle'); say(e.message, false); }
 }
 
-$('#typedBtn').onclick = async () => {
-  const text = $('#typed').value.trim(); if (!text) return;
-  const btn = $('#typedBtn'); busy(btn, 'Extracting…');
-  try { renderExtract(await api('/sessions/debrief-text?sync_enrich=true', { json: { text } })); }
-  catch (e) { alert(e.message); }
-  done(btn);
-};
-
-function renderExtract(x) {
-  const card = $('#extractCard'); card.classList.remove('hidden');
-  card.innerHTML = `
-    <div class="flex items-baseline gap-3 flex-wrap"><h3 class="text-xl font-semibold">${esc(x.person.name)}</h3>
-      <span class="muted">${esc(x.person.role || '')}${x.company ? ' @ ' + esc(x.company.name) : ''}</span>${roleChip(x.person.role_class)}
-      ${x.person.email ? chip(x.person.email) : '<span class="muted text-sm">no email said</span>'}</div>
-    <p>${esc(x.summary)}</p>
-    <div>${x.topics.map(t => chip(t)).join('')}</div>
-    ${x.promises.length ? `<ul class="space-y-1">${x.promises.map(p => `<li>${p.by === 'me' ? '🫵 <b>You</b>' : '🤝 <b>They</b>'} promised: ${esc(p.text)}</li>`).join('')}</ul>` : ''}
-    <details class="muted text-sm"><summary class="cursor-pointer">transcript</summary><pre class="mt-2">${esc(x.transcript)}</pre></details>
-    <div class="flex gap-3 pt-2 flex-wrap">
-      <button class="btn-primary" data-gen="${esc(x.person.name)}">Draft follow-up for ${esc(x.person.name.split(' ')[0])}</button>
-      <button class="btn" data-goto="insights">See common ground</button>
-    </div>`;
+// ---------------------------------------------------------------- cards
+function addCard(html, cls = '') {
+  $('#welcome')?.remove();
+  const el = document.createElement('article');
+  el.className = 'card ' + cls; el.innerHTML = html;
+  $('#feed').prepend(el); enter(el);
+  return el;
 }
 
-// ---------------------------------------------------------------- insights
-async function loadInsights() {
-  const [people, cg, radar] = await Promise.all([api('/graph/people'), api('/graph/common-ground'), api('/graph/referral-radar')]);
-  const byPerson = {};
-  cg.forEach(c => (byPerson[c.person] ||= []).push(c));
-  people.sort((a, b) => (byPerson[b.name]?.length ? 1 : 0) - (byPerson[a.name]?.length ? 1 : 0));
-  $('#cgList').innerHTML = people.map(p => {
-    const rows = byPerson[p.name] || [];
-    const seen = new Set();
-    const uniq = rows.filter(r => !seen.has(r.doc_url + r.topic) && seen.add(r.doc_url + r.topic)).slice(0, 4);
-    return `<div class="card p-4 space-y-2">
-      <div class="flex items-baseline gap-2 flex-wrap"><b class="text-lg">${esc(p.name)}</b><span class="muted">${esc(p.role || '')}${p.company ? ' @ ' + esc(p.company) : ''}</span>${roleChip(p.role_class)}</div>
-      ${uniq.length ? `<ul class="space-y-2">${uniq.map(c => `<li>🤝 <b>${esc(c.topic)}</b> → ${link(c.doc_url, c.doc_title)} ${chip(c.doc_kind)}</li>`).join('')}</ul>`
-        : `<p class="muted">No common ground yet${p.company ? ` — <button class="underline" data-enrich="${esc(p.company)}" data-domain="${esc(p.domain || '')}">enrich ${esc(p.company)}</button>` : ''}</p>`}
-      <button class="btn text-sm" data-gen="${esc(p.name)}">Draft follow-up</button>
-    </div>`;
-  }).join('') || '<p class="muted">No one yet. Record a debrief first.</p>';
-
-  $('#radar').innerHTML = radar.map(r => {
-    const matched = r.matched || r.matched_skills || [];
-    return `<div class="card p-4 space-y-1">
-      <div><b>${esc(r.person)}</b> <span class="muted">@ ${esc(r.company)}</span></div>
-      <div>is hiring → ${link(r.job_url, r.job_title)}</div>
-      <div>${matched.map(s => chip(s, 'background:#1f6b45;color:#fff')).join('')}</div>
-    </div>`;
-  }).join('') || '<p class="muted">No matches yet.</p>';
-  loadPresets();
+function metCard(x) {
+  return `<div class="card-h"><span class="kind voice">Met</span><h3>${esc(x.person.name)}</h3>
+      <span class="muted">${esc(x.person.role || '')}${x.company ? ' · ' + esc(x.company.name) : ''}</span></div>
+    <p style="margin:0 0 10px">${esc(x.summary)}</p>
+    <div>${x.topics.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>
+    ${x.promises.length ? `<div class="muted" style="margin-top:8px">${x.promises.map(p => `${p.by === 'me' ? 'You' : 'They'} promised: ${esc(p.text)}`).join(' · ')}</div>` : ''}
+    <div class="scan-slot" style="margin-top:14px"></div>`;
 }
 
-// Person B's spec: POST /graph/query {preset}. Scaffold: POST /graph/query/{name}. Support both.
-const PREFERRED = ['inference_engineers', 'recruiters', 'open_promises', 'hot_topics', 'companies_by_sector'];
-async function loadPresets() {
-  let presets = [];
-  try { presets = await api('/graph/presets'); } catch {}
-  const names = presets.map(p => p.name);
-  const pick = PREFERRED.filter(n => names.includes(n)).slice(0, 3);
-  const list = pick.length ? pick.map(n => presets.find(p => p.name === n)) : PREFERRED.slice(0, 3).map(n => ({ name: n }));
-  $('#presets').innerHTML = list.map(p => `<button class="btn" data-preset="${esc(p.name)}" title="${esc(p.description || '')}">${esc(p.name.replace(/_/g, ' '))}</button>`).join('');
-}
-async function runPreset(name) {
-  $('#presetOut').innerHTML = '<span class="spinner"></span>';
-  let rows;
-  try { rows = await api('/graph/query', { json: { preset: name, params: {} } }); }
-  catch { rows = await api(`/graph/query/${name}`, { method: 'POST' }).catch(e => ({ error: e.message })); }
-  if (rows.error) { $('#presetOut').innerHTML = `<p class="muted">${esc(rows.error)}</p>`; return; }
-  if (!rows.length) { $('#presetOut').innerHTML = '<p class="muted">0 rows</p>'; return; }
-  const cols = Object.keys(rows[0]);
-  const cell = (v) => Array.isArray(v) ? v.map(x => chip(x)).join('') : (typeof v === 'string' && v.startsWith('http') ? link(v) : esc(v));
-  $('#presetOut').innerHTML = `<div class="card overflow-auto"><table class="w-full"><thead><tr>${cols.map(c => `<th class="text-left p-3 muted font-medium">${esc(c)}</th>`).join('')}</tr></thead>
-    <tbody>${rows.map(r => `<tr class="border-t border-[#263152]">${cols.map(c => `<td class="p-3 align-top">${cell(r[c])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+function intelBlock(r) {
+  const steps = (r.steps || []).map(s => `<span class="step ${s.ok ? '' : 'fail'}">${s.ok ? '✓' : '×'} ${esc(s.step)}</span>`).join('');
+  const posts = (r.posts || []).slice(0, 2).map(p => `<div class="post"><div>${esc(p.text)}</div><div>${link(p.url, 'LinkedIn post' + (p.posted_at ? ' · ' + p.posted_at : ''))}</div></div>`).join('');
+  const news = (r.news || []).slice(0, 2).map(n => `<div class="post"><div>${esc(n.title)}</div><div>${link(n.url, 'news' + (n.published_at ? ' · ' + n.published_at : ''))}</div></div>`).join('');
+  return `<div class="intel"><div class="row"><b>${esc(r.person)}</b>${r.headline ? `<span class="muted">${esc(r.headline)}</span>` : ''}${r.linkedin ? link(r.linkedin, 'LinkedIn') : ''}</div>
+    ${steps ? `<div class="steps">${steps}</div>` : ''}${posts}${news}
+    ${!posts && !news ? '<div class="muted">Nothing fresh on the web this week.</div>' : ''}</div>`;
 }
 
-$('#genAllBtn').onclick = async () => {
-  const btn = $('#genAllBtn'); busy(btn, 'Drafting…');
-  try { await api('/asks/generate', { json: {} }); showTab('queue'); } catch (e) { alert(e.message); }
-  done(btn);
-};
-
-// ---------------------------------------------------------------- queue
-$('#queueFilter').onchange = loadQueue;
-async function loadQueue() {
-  const status = $('#queueFilter').value;
-  const drafts = await api(`/asks/queue?status=${status}`);
-  updateQueueCount();
-  $('#queue').innerHTML = drafts.map(d => {
-    const pending = d.status === 'pending';
-    return `<div class="card p-5 space-y-3" data-draft="${esc(d.id)}">
-      <div class="flex items-center gap-2 flex-wrap">
-        <b class="text-lg">${esc(d.person)}</b>
-        ${pending ? `<input class="px-2 py-1 text-sm w-64" data-field="email" value="${esc(d.email || '')}" placeholder="add email to send">` : `<span class="muted">${esc(d.email || 'no email')}</span>`}
-        ${chip(d.ask_type.replace(/_/g, ' '), 'background:#3b46a8;color:#fff')}
-        ${chip(d.status, d.status === 'sent' ? 'background:#1f6b45;color:#fff' : '')}
-        <button class="btn text-sm ml-auto" data-why="${esc(d.id)}">Why this ask?</button>
-      </div>
-      ${pending ? `<input class="w-full px-3 py-2 font-semibold" data-field="subject" value="${esc(d.subject)}">`
-                : `<div class="font-semibold">${esc(d.subject)}</div>`}
-      ${pending ? `<textarea class="w-full p-3" rows="${Math.min(14, d.body.split('\n').length + 2)}" data-field="body">${esc(d.body)}</textarea>`
-                : `<pre class="bg-[#0e1426] rounded-lg p-3">${linkify(d.body)}</pre>`}
-      <div class="why hidden"></div>
-      ${pending ? `<div class="flex gap-3"><button class="btn-primary" data-approve="${esc(d.id)}">Approve &amp; send</button><button class="btn" data-skip="${esc(d.id)}">Skip</button></div>` : ''}
-    </div>`;
-  }).join('') || '<p class="muted">Queue is empty. Go to Insights → Generate all follow-ups.</p>';
-}
-async function updateQueueCount() {
-  try { const p = await api('/asks/queue?status=pending'); const el = $('#queueCount'); el.textContent = p.length; el.classList.toggle('hidden', !p.length); } catch {}
+function draftBlock(d) {
+  const sent = d.status !== 'pending';
+  return `<div class="draft" data-draft="${esc(d.id)}">
+    <div class="row"><b>${esc(d.person)}</b><span class="kind voice">${esc(d.ask_type.replace(/_/g, ' '))}</span>
+      ${d.email ? `<span class="mono muted">${esc(d.email)}</span>` : '<input class="email" placeholder="add their email" style="max-width:240px">'}</div>
+    <input class="subject" value="${esc(d.subject)}" ${sent ? 'disabled' : ''} aria-label="Subject">
+    <textarea ${sent ? 'disabled' : ''} aria-label="Email body">${esc(d.body)}</textarea>
+    <div class="row">${sent ? `<span class="sent">✓ ${esc(d.status)}</span>` : `<button class="btn primary" data-approve="${esc(d.id)}">Approve & send now</button>`}
+      <button class="btn" data-why="${esc(d.id)}">Why this?</button>
+      <span class="muted mono">${(d.because || []).filter(b => b.startsWith('http')).length} sources</span></div>
+    <div class="why-slot"></div></div>`;
 }
 
-async function approve(id, btn) {
-  const card = document.querySelector(`[data-draft="${CSS.escape(id)}"]`);
-  const val = (f) => card.querySelector(`[data-field="${f}"]`)?.value;
-  busy(btn, 'Sending…');
-  try { await api(`/asks/${encodeURIComponent(id)}/approve`, { json: { subject: val('subject'), body: val('body'), email: val('email') || null } }); loadQueue(); }
-  catch (e) { alert(e.message); done(btn); }
+const KIND_DOT = { Topic: 'graph', WebDoc: 'web', Job: 'web', Company: 'graph', Person: 'voice', User: 'voice', Promise: 'graph', Draft: 'voice' };
+function chainBlock(w) {
+  const nodes = w.nodes || [];
+  return `<ol class="chain">${nodes.map(n => {
+    const type = n.type || n.kind || ''; const url = n.url || (String(n.id).startsWith('http') ? n.id : null);
+    return `<li><span class="dot ${KIND_DOT[type] || 'graph'}"></span><div class="node"><small>${esc(type)}</small>${url ? link(url, n.label) : esc(n.label)}</div></li>`;
+  }).join('')}</ol>`;
 }
 
-const KIND_ICON = { User: '🙋', Person: '👤', Session: '🎙️', Company: '🏢', Topic: '💬', WebDoc: '📄', Job: '💼', Promise: '🤝', Draft: '✉️', Skill: '🛠️' };
-async function toggleWhy(id, btn) {
-  const box = document.querySelector(`[data-draft="${CSS.escape(id)}"] .why`);
-  if (!box.classList.contains('hidden')) { box.classList.add('hidden'); return; }
-  box.classList.remove('hidden'); box.innerHTML = '<span class="spinner"></span>';
-  try {
-    const w = await api(`/graph/why/${encodeURIComponent(id)}`);
-    const nodes = w.nodes || [], edges = w.edges || [];
-    const inbound = (nid) => edges.find(e => e.to === nid || e.from === nid);
-    box.innerHTML = `<div class="bg-[#0e1426] rounded-lg p-4"><div class="muted text-sm mb-2">Path through the graph</div><ol class="space-y-0">${
-      nodes.map((n, i) => {
-        const type = n.type || n.kind || '';
-        const url = n.url || (String(n.id).startsWith('http') ? n.id : null);
-        const e = i > 0 ? inbound(n.id) : null;
-        return `${e ? `<li class="muted text-xs pl-7 py-0.5">│ ${esc(e.type)}</li>` : ''}
-          <li class="flex gap-2 items-baseline"><span>${KIND_ICON[type] || '•'}</span>${chip(type)}<span>${url ? link(url, n.label) : esc(n.label)}</span></li>`;
-      }).join('')}</ol></div>`;
-  } catch (e) { box.innerHTML = `<p class="muted">${esc(e.message)}</p>`; }
+function renderEvents(events) {
+  // collapse repeated common_ground events from one turn into one card
+  const cg = events.filter(e => e.type === 'common_ground').flatMap(e => e.rows || []);
+  const rest = events.filter(e => e.type !== 'common_ground');
+  if (cg.length) rest.push({ type: 'common_ground', rows: cg });
+  rest.forEach(renderEvent);
 }
 
-// ---------------------------------------------------------------- one click handler for all data-* buttons
+function renderEvent(e) {
+  switch (e.type) {
+    case 'goals': renderGoals(e.goals); addCard(`<div class="card-h"><span class="kind voice">Goals</span><h3>Saved for the conference</h3></div>${e.goals.map(g => `<span class="tag">${esc(g)}</span>`).join('')}`); break;
+    case 'people': addCard(`<div class="card-h"><span class="kind graph">Graph</span><h3>${e.people.length} people you met</h3></div>
+        <div class="groups">${e.people.map(p => `<div class="group"><div class="role">${esc(p.role_class)}</div><b>${esc(p.name)}</b><div class="muted">${esc(p.role || '')}${p.company ? ' · ' + esc(p.company) : ''}</div></div>`).join('')}</div>`); break;
+    case 'groups': {
+      const el = addCard(`<div class="card-h"><span class="kind graph">Grouped by your goals</span></div>
+        <div class="groups">${e.groups.map(g => `<div class="group"><h4>${esc(g.intent)}</h4>${g.people.length ? g.people.map(p => `<div class="person"><b>${esc(p.person)}</b><span class="role">${esc((p.ask_type || '').replace(/_/g, ' '))}</span><span class="why">${esc(p.reason || '')}</span></div>`).join('') : '<div class="muted">No one yet</div>'}</div>`).join('')}
+        ${e.unassigned?.length ? `<div class="group"><h4 class="muted">No clear fit</h4>${e.unassigned.map(n => `<div class="person">${esc(n)}</div>`).join('')}</div>` : ''}</div>`);
+      stagger(el.querySelectorAll('.group')); break;
+    }
+    case 'intel': {
+      const el = addCard(`<div class="card-h"><span class="kind web">Live web · Bright Data</span><h3>What they’re up to this week</h3></div><div class="intel-grid">${e.results.map(intelBlock).join('')}</div>`);
+      stagger(el.querySelectorAll('.intel')); updateWeb(e.bright_data); break;
+    }
+    case 'common_ground': {
+      const seen = new Set(); const rows = e.rows.filter(r => { const k = r.person + r.doc_url; return !seen.has(k) && seen.add(k); }).slice(0, 8);
+      addCard(`<div class="card-h"><span class="kind graph">Common ground</span><h3>You talked about it. They published it.</h3></div>
+        ${rows.length ? rows.map(r => `<div class="person"><div><b>${esc(r.person)}</b> <span class="muted">· ${esc(r.topic)}</span></div>${link(r.doc_url, r.doc_title)}</div>`).join('') : '<div class="muted">No overlap found yet.</div>'}`); break;
+    }
+    case 'drafts': {
+      const el = addCard(`<div class="card-h"><span class="kind voice">Drafts</span><h3>${e.drafts.length} follow-ups ready</h3><span class="muted">edit anything, or say “schedule them”</span></div>${e.drafts.map(draftBlock).join('')}`);
+      stagger(el.querySelectorAll('.draft')); break;
+    }
+    case 'why': addCard(`<div class="card-h"><span class="kind graph">Why</span><h3>${esc(e.draft.person)}: ${esc(e.draft.subject)}</h3></div>${chainBlock(e.why)}`); break;
+    case 'schedule_preview': addCard(`<div class="card-h"><span class="kind voice">Ready to send</span><h3>${e.send_at ? 'Scheduled for ' + esc(fmtTime(e.send_at)) : 'Send now'}</h3></div>
+        ${e.plan.map(p => `<div class="person"><b>${esc(p.person)}</b><span class="mono muted">${esc(p.to)} · ${esc(p.subject)}</span></div>`).join('')}
+        ${e.no_email?.length ? `<div class="muted" style="margin-top:8px">No email for ${esc(e.no_email.join(', '))}; add one on their draft.</div>` : ''}
+        <div class="row" style="margin-top:12px"><button class="btn primary" data-say="Yes, go ahead.">Yes, go ahead</button><button class="btn" data-say="No, hold off.">Hold off</button></div>`); break;
+    case 'scheduled': addCard(`<div class="card-h"><span class="kind voice">Done</span><h3>${e.sent.length} ${e.send_at ? 'scheduled for ' + esc(fmtTime(e.send_at)) : 'sent'}</h3></div>${e.sent.map(s => `<div class="person"><b>${esc(s.person)}</b><span class="muted">${esc(s.subject)}</span></div>`).join('')}`); refreshState(); break;
+    case 'error': addCard(`<div class="muted">${esc(e.message)}</div>`, 'err'); break;
+  }
+}
+const fmtTime = (iso) => { try { return new Date(iso).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }); } catch { return iso; } };
+
+// ---------------------------------------------------------------- buttons inside cards
 document.addEventListener('click', async (ev) => {
   const b = ev.target.closest('button'); if (!b) return;
-  const d = b.dataset;
-  if (d.goto) showTab(d.goto);
-  else if (d.preset) runPreset(d.preset);
-  else if (d.why) toggleWhy(d.why, b);
-  else if (d.approve) approve(d.approve, b);
-  else if (d.skip) { await api(`/asks/${encodeURIComponent(d.skip)}/skip`, { method: 'POST' }).catch(e => alert(e.message)); loadQueue(); }
-  else if (d.gen) { busy(b, 'Drafting…'); try { await api('/asks/generate', { json: { person: d.gen } }); showTab('queue'); } catch (e) { alert(e.message); done(b); } }
-  else if (d.enrich) { busy(b, 'Scraping…'); try { await api('/graph/enrich', { json: { company: d.enrich, domain: d.domain || null } }); loadInsights(); } catch (e) { alert(e.message); done(b); } }
+  if (b.dataset.say) { showHeard(b.dataset.say); send(b.dataset.say); }
+  else if (b.dataset.approve) {
+    const box = b.closest('[data-draft]'); b.disabled = true; b.textContent = 'Sending…';
+    try {
+      await api(`/asks/${encodeURIComponent(b.dataset.approve)}/approve`, { json: { subject: $('.subject', box).value, body: $('textarea', box).value, email: $('.email', box)?.value || null } });
+      b.outerHTML = '<span class="sent">✓ sent</span>'; $('textarea', box).disabled = true; $('.subject', box).disabled = true;
+    } catch (e) { b.disabled = false; b.textContent = 'Approve & send now'; say(e.message, false); }
+  } else if (b.dataset.why) {
+    const slot = $('.why-slot', b.closest('[data-draft]'));
+    if (slot.innerHTML) { slot.innerHTML = ''; return; }
+    try { slot.innerHTML = chainBlock(await api(`/graph/why/${encodeURIComponent(b.dataset.why)}`)); stagger(slot.querySelectorAll('li')); } catch (e) { slot.innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
+  }
 });
 
-// #insights / #queue in the URL opens that tab (handy for the demo).
-showTab(['record', 'insights', 'queue'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'record');
-updateQueueCount();
+// ---------------------------------------------------------------- status + initial state
+function renderGoals(goals) {
+  $('#goals').innerHTML = goals?.length ? goals.map(g => `<span class="goal">${esc(g)}</span>`).join('') : '<span class="hint">Tell me your goals for the conference</span>';
+  stagger($('#goals').children);
+}
+function updateWeb(bd) { const el = $('#stWeb'); el.classList.toggle('on', !!bd?.available); el.classList.toggle('off', !bd?.available); el.title = bd?.last_error || ''; }
+async function refreshState() {
+  try {
+    const [h, s] = await Promise.all([api('/health'), api('/agent/state')]);
+    $('#stGraph').className = 'pill ' + (h.graph_status === 'ok' ? 'on' : 'off');
+    $('#stMode').className = 'pill ' + (h.mock_mode ? 'off' : 'on'); $('#stMode').lastChild.textContent = h.mock_mode ? 'Mock' : 'Live';
+    $('#event').textContent = s.event;
+    updateWeb(s.bright_data);
+    return s;
+  } catch { $('#stGraph').className = 'pill off'; }
+}
+refreshState().then(s => {
+  if (!s) return;
+  renderGoals(s.goals);
+  const grouped = (s.groups || []).some(g => g.people.length);
+  if (grouped) renderEvent({ type: 'groups', groups: s.groups, unassigned: [] });
+  // ?say=… sends one line on load (scripted demos, screenshots)
+  const q = new URLSearchParams(location.search).get('say');
+  if (q) { showHeard(q); send(q); }
+});
 </script>
 </body>
 </html>

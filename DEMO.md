@@ -21,18 +21,22 @@
 
 ## The script (about 3 minutes)
 
+Open http://localhost:8000. Everything is one button: tap the orb (or hold space) and talk. The old tabbed UI is at
+`/classic.html`. Each line below also works as a chip or typed message if the room is too loud.
+
 1. **Problem.** "You met 20 people today. You'll follow up with 2, and they'll be generic."
-2. **Record live.** Record tab → **Start recording**, then a 20-second debrief:
-   *"Just met Sarah Chen, backend engineer at Modal. We talked GPU cold starts and KV cache. She said they're
-   hiring and could refer me. I promised to send my benchmark repo. Her email is sarah at modal dot com."*
-   → **End & process**. The card shows person, role badge, topics, promises, and the email (only because it was said).
-3. **Bright Data (Person B).** Enrichment lands: blog, repos, jobs, each with a URL.
-4. **Common Ground.** Insights tab: "the topic you discussed ↔ the post they published", with links.
-5. **Generate.** **Generate all follow-ups**: one draft per person. Each first sentence cites the topic and the
-   company's post; engineers at hiring companies get a **referral** ask that names the real job.
-6. **Why this ask?** On a referral draft: Person → Topic → WebDoc ← Company → Job → Draft, with clickable sources.
-7. **Approve.** Edit a word live, then **Approve & send** to a judge's inbox (ask them first).
-8. **Close.** "Your conversation is half the context. Bright Data brings the other half live; FalkorDB joins them."
+2. **Before the conference.** Tap and say: *"I want an LLM inference engineering job, and seed investors for my side project."*
+   Goals appear above the orb.
+3. **During.** Tap **Record a conversation**, have a 20-second chat with a teammate playing Sarah:
+   *"I'm Sarah Chen, backend engineer at Modal. We're hiring for inference. Find me on LinkedIn, sarahchen."*
+   **Stop & save**: the person card appears, then the amber bar: Bright Data is pulling her LinkedIn posts live.
+4. **After.** *"Who fits my goals?"*: people sorted into your goals, each with the ask that serves it.
+5. *"Research my job search people."*: the Live web card: LinkedIn posts + this week's company news (Bright Data).
+6. *"Draft follow-ups for my job search."*: each draft opens with common ground or **their post from this week**,
+   and referral asks name the real open role.
+7. **Why this?** on a draft: the path through the graph, with clickable sources.
+8. *"Schedule them for Monday 9am."*: Wingman reads back who gets what and asks. *"Yes, go ahead."* Scheduled.
+9. **Close.** "Your conversation is half the context. Bright Data brings the other half live; FalkorDB joins them."
 
 ## If something breaks
 

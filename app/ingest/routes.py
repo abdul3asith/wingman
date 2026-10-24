@@ -42,17 +42,8 @@ def _run(sid: str, text: str, background: BackgroundTasks, sync_enrich: bool) ->
             graph_bridge.enrich_company(x.company.name, x.company.domain)
         else:
             background.add_task(graph_bridge.enrich_company, x.company.name, x.company.domain)
-    background.add_task(_research_person, x.person.name)  # Bright Data people intel, never blocks the response
+    # People intel (Bright Data) runs from the UI via POST /agent/research so the user sees it happen.
     return x
-
-
-def _research_person(name: str) -> None:
-    from app.agent import intel
-
-    try:
-        intel.research(name)
-    except Exception as e:
-        print(f"[ingest] background research for {name} failed: {e}")
 
 
 @router.post("/debrief-text", response_model=SessionExtract)
