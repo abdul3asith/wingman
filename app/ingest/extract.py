@@ -39,14 +39,21 @@ class _CompanyOut(BaseModel):
 class _PromiseOut(BaseModel):
     by: Literal["me", "them"]
     text: str
+    doer_speaker: str | None  # "Speaker N" who will DO it (labeled transcripts); code derives `by` from it
 
 
 class _ExtractOut(BaseModel):
+    me_speaker: str | None  # which "Speaker N" is the user; null for a solo debrief
     summary: str
     person: _PersonOut
     company: _CompanyOut | None
     topics: list[str]
     promises: list[_PromiseOut]
+
+
+# Speaker attribution is the hardest part of extraction and everything downstream (fulfilment lines, drafts)
+# depends on it, so this one call uses a stronger model than the rest of the app.
+EXTRACT_MODEL = "gpt-4o"
 
 
 PROMPT = """You are reading a transcript recorded by {user} at {event}. It is one of two kinds:
@@ -57,12 +64,16 @@ PROMPT = """You are reading a transcript recorded by {user} at {event}. It is on
    introductions ("I'm ..."), who is asking about whom, and {user}'s background ({skills}). THEM is usually the
    one who states their company, hands over their email, or offers a referral or job; ME is usually the one asking
    about them and collecting the contact. Extract THEM as `person`; ME is never `person`.
-   Step 2: for every promise, look at the label on the line where it was said. Label THEM -> by="them".
-   Label ME -> by="me". Example: if Speaker 1 is ME and Speaker 0 is THEM, then "Speaker 0: I'll send you the
-   blog post" gives by="them", and "Speaker 1: I'll send my repo" gives by="me".
+   Put ME's label in me_speaker (e.g. "Speaker 1").
+   Step 2: for every promise, set doer_speaker to the label of the person who will DO the thing — not
+   necessarily who said the line. Examples, with Speaker 0 = THEM and Speaker 1 = ME:
+     "Speaker 0: I'll send you the blog post"                     -> doer_speaker "Speaker 0", "Send the blog post"
+     "Speaker 0: Send me your repo." / "Speaker 1: Will do."       -> doer_speaker "Speaker 1", "Send my repo"
+     "Speaker 1: Could you intro me to your CTO?" / "Speaker 0: Sure" -> doer_speaker "Speaker 0", "Intro to their CTO"
    If more than two speakers appear, THEM is the person {user} talked with the most.
 2. A solo voice debrief spoken by {user} about a conversation they just had. The speaker is {user} ("me");
    extract the person they describe; by="me" for what {user} promised, by="them" for what that person promised.
+   me_speaker and every doer_speaker are null.
 
 In both cases return exactly one person (the OTHER person, never {user}) with:
 - role: a short normalized job title ("ML Engineer", "Head of Platform Engineering"). role_class is exactly one of
@@ -72,7 +83,9 @@ In both cases return exactly one person (the OTHER person, never {user}) with:
   said or is unambiguous, else null.
 - topics: 2-4 short lowercase noun phrases, no duplicates, specific over generic ("kv cache", "inference serving",
   not "ai" or "tech").
-- promises: every promise either side made, each as a short imperative ("Send the cold starts blog post").
+- promises: every commitment either side made, each as a short imperative naming the thing ("Send my benchmark
+  repo"), never "it". A request plus its acceptance is ONE promise. A request nobody agreed to is not a promise.
+  `by` is "me" if {user} will do it, else "them".
 - summary: one factual sentence.
 - email: only if it was explicitly said; spoken forms like "maya at parallaxlabs dot ai" become maya@parallaxlabs.ai.
   NEVER guess or construct an email. Any unknown field is null.
@@ -84,14 +97,15 @@ TRANSCRIPT:
 MAX_TOPICS = 4
 
 MOCK_EXTRACT = _ExtractOut(
+    me_speaker="Speaker 1",
     summary="Met Maya Lindqvist, an ML engineer at Parallax Labs, to talk speculative decoding and CUDA graphs; she offered a referral for their inference engineer role.",
     person=_PersonOut(name="Maya Lindqvist", role="ML Engineer", role_class="engineer", email="maya@parallaxlabs.ai",
                       linkedin="maya-lindqvist-demo"),
     company=_CompanyOut(name="Parallax Labs", domain="parallaxlabs.ai"),
     topics=["speculative decoding", "gpu inference", "cuda"],
     promises=[
-        _PromiseOut(by="them", text="Send the speculative decoding blog post"),
-        _PromiseOut(by="me", text="Send my CUDA benchmark repo"),
+        _PromiseOut(by="them", text="Send the speculative decoding blog post", doer_speaker="Speaker 0"),
+        _PromiseOut(by="me", text="Send my CUDA benchmark repo", doer_speaker="Speaker 1"),
     ],
 )
 
@@ -110,6 +124,17 @@ class NoPersonFound(ValueError):
 _JUNK_NAMES = {"", "null", "none", "unknown", "n/a", "na", "them", "the person", "speaker", "speaker 0", "speaker 1"}
 
 
+def _attribute_promises(out: _ExtractOut) -> None:
+    """Labeled transcripts: `by` comes from the speaker labels, not the model's own me/them guess."""
+    norm = lambda s: (s or "").strip().lower()  # noqa: E731
+    me = norm(out.me_speaker)
+    if not me:
+        return
+    for p in out.promises:
+        if norm(p.doer_speaker):
+            p.by = "me" if norm(p.doer_speaker) == me else "them"
+
+
 def _name_was_said(name: str | None, transcript: str) -> bool:
     """Guardrail against invented people ("John Doe"): some part of the name must appear in the transcript."""
     low = transcript.lower()
@@ -123,7 +148,12 @@ def extract(session_id: str, transcript: str, started_at: str | None = None) -> 
         prompt = PROMPT.format(
             user=settings.USER_NAME, event=settings.EVENT_NAME, skills=", ".join(settings.USER_SKILLS), transcript=transcript
         )
-        out = llm.parse(prompt, _ExtractOut)
+        try:
+            out = llm.parse(prompt, _ExtractOut, model=EXTRACT_MODEL)
+        except Exception as e:
+            print(f"[extract] {EXTRACT_MODEL} failed ({e}); retrying with {settings.OPENAI_CHAT_MODEL}")
+            out = llm.parse(prompt, _ExtractOut)
+        _attribute_promises(out)
         if not _email_was_said(out.person.email, transcript):
             out.person.email = None
         if out.company and out.company.name.strip().lower() in _JUNK_NAMES:

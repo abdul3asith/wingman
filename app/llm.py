@@ -31,12 +31,13 @@ def transcribe(path: str, model: str | None = None) -> str:
     return res.text
 
 
-def parse(prompt: str, model_cls: type[T], system: str = "You are a precise information extractor. Return only the schema.") -> T:
+def parse(prompt: str, model_cls: type[T], system: str = "You are a precise information extractor. Return only the schema.",
+          model: str | None = None) -> T:
     """Structured output via Pydantic parse. model_cls fields must have no defaults (strict schema)."""
     c = client()
     parser = getattr(c.chat.completions, "parse", None) or c.beta.chat.completions.parse
     res = parser(
-        model=settings.OPENAI_CHAT_MODEL,
+        model=model or settings.OPENAI_CHAT_MODEL,
         messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
         response_format=model_cls,
     )
