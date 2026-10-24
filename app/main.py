@@ -11,6 +11,7 @@ from app.graph import queries, schema, writes
 from app.graph.db import GraphUnavailable, scalar
 from app.graph.routes import router as graph_router
 from app.ingest.routes import router as ingest_router
+from app.memory.routes import router as memory_router
 
 
 @asynccontextmanager
@@ -31,6 +32,7 @@ app = FastAPI(title="wingman", version="0.1.0", lifespan=lifespan)
 app.include_router(ingest_router)
 app.include_router(asks_router)
 app.include_router(graph_router)
+app.include_router(memory_router)
 
 
 @app.exception_handler(GraphUnavailable)

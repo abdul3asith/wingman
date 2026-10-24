@@ -32,18 +32,44 @@ if health and health.get("graph_status") != "ok":
 
 check("GET / (web UI)", lambda: "html" if "<html" in c.get("/").text.lower() else (_ for _ in ()).throw(AssertionError("no html")))
 
-sid = check("POST /sessions (transcript)", lambda: ok(c.post("/sessions", data={"transcript": "smoke test transcript"}))["session_id"])
+MOCK = bool(health and health.get("mock_mode"))
+# Mock mode: upload a dummy clip, which transcribes to the canned two-conversation recording (Maya, then Jordan).
+# Live mode: paste a short two-speaker transcript so the check costs one extraction, not a Deepgram call.
+LIVE_TRANSCRIPT = (
+    "Speaker 0: Hi, I'm Sam, I run developer relations at Quillon. What brings you here?\n"
+    "Speaker 1: I'm looking for a backend engineering job, mostly Python services."
+)
+sid = check(
+    "POST /sessions (audio)" if MOCK else "POST /sessions (transcript)",
+    lambda: ok(c.post("/sessions", files={"audio": ("smoke.webm", b"mock", "audio/webm")}) if MOCK
+               else c.post("/sessions", data={"transcript": LIVE_TRANSCRIPT}))["session_id"],
+)
 
 
 def _process():
     out = ok(c.post(f"/sessions/{sid}/process"))
-    assert out["transcript"], "empty transcript"
-    assert "graph_status" in out, "graph_status missing"
-    return {"transcript_chars": len(out["transcript"]), "graph_status": out["graph_status"]}
+    convs = out["conversations"]
+    assert len(convs) >= 1, "no conversations"
+    assert out.get("goal"), "goal missing"
+    linked = [x for x in convs if x["goal"]["linked"]]
+    if MOCK:
+        assert len(convs) >= 2, f"mock recording should split into 2 conversations, got {len(convs)}"
+        assert linked, "no conversation linked to the goal"
+    return {"me": out["me_speaker"], "conversations": len(convs), "linked": [x["person"]["name"] for x in linked]}
 
 
 check("POST /sessions/{id}/process", _process)
-# /process no longer writes to the graph (conversion is a stub), so later checks use a seeded person/session.
+
+
+def _goal():
+    out = ok(c.get("/memory/goal"))
+    assert out.get("goal"), "goal missing"
+    if MOCK:
+        assert len(out["connections"]) >= 1, "no goal connections"
+    return {"connections": [(x["name"], x["relevance"]) for x in out["connections"]]}
+
+
+check("GET /memory/goal", _goal)
 people = check("GET /graph/people", lambda: ok(c.get("/graph/people")))
 person = people[0]["name"] if people else None
 sessions = check("GET /sessions", lambda: ok(c.get("/sessions")))

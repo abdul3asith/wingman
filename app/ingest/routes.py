@@ -1,28 +1,22 @@
 """POST /sessions, POST /sessions/{id}/process — OWNER: Person A."""
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
 
 from app.config import settings
 from app.graph import queries
-from app.ingest import transcribe, transcript_graph
+from app.ingest import transcribe
 from app.ingest.deepgram import TranscriptionError
-from app.ingest.turns import to_text
+from app.ingest.turns import parse_text, to_text
+from app.memory import build as memory
+from app.memory.extract import LLMError
 
 router = APIRouter(prefix="/sessions", tags=["ingest"])
 
 # Uploaded-but-unprocessed sessions. Process saves the transcript to disk, so this can stay in memory.
 _pending: dict[str, dict] = {}
-
-
-class ProcessResult(BaseModel):
-    """Response of /process. Ingest-local on purpose: contract.py is frozen and this never crosses the A/B seam."""
-
-    session_id: str
-    transcript: str
-    graph_status: str
 
 
 @router.post("")
@@ -39,26 +33,41 @@ async def create_session(audio: UploadFile | None = File(None), transcript: str 
         with audio_path.open("wb") as f:
             while chunk := await audio.read(1 << 20):
                 f.write(chunk)
-    _pending[sid] = {"audio_path": str(audio_path) if audio_path else None, "transcript": transcript}
+    _pending[sid] = {
+        "audio_path": str(audio_path) if audio_path else None,
+        "transcript": transcript,
+        "uploaded_at": datetime.now(timezone.utc),
+    }
     return {"session_id": sid, "status": "uploaded", "has_audio": audio_path is not None}
 
 
-@router.post("/{sid}/process", response_model=ProcessResult)
+@router.post("/{sid}/process")
 def process_session(sid: str):
-    """Transcribe (or take the pasted text) -> save to cache/transcripts -> graph conversion (stub for now)."""
+    """Turns (transcribed or pasted) -> cache/transcripts/<id>.txt -> segment, extract and write event memory.
+
+    Returns {session_id, me_speaker, goal, conversations}. The transcript stays on disk and in this response;
+    it is never written to the graph.
+    """
     pending = _pending.get(sid)
     if pending is None:
         raise HTTPException(404, f"session {sid} not found or already processed")
-    try:
-        text = pending["transcript"] or to_text(transcribe.transcribe_file(pending["audio_path"]))
-    except TranscriptionError as e:
-        # Keep the upload pending so the user can retry /process.
-        raise HTTPException(502, str(e))
+    turns = pending.get("turns")
+    if turns is None:
+        try:
+            turns = parse_text(pending["transcript"]) if pending["transcript"] else transcribe.transcribe_file(pending["audio_path"])
+        except TranscriptionError as e:
+            # Keep the upload pending so the user can retry /process.
+            raise HTTPException(502, str(e))
+        pending["turns"] = turns  # a retry after an LLM failure skips re-transcribing
     out = settings.CACHE_DIR / "transcripts" / f"{sid}.txt"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(text)
-    _pending.pop(sid, None)  # only forget the upload once the transcript is on disk
-    return ProcessResult(session_id=sid, transcript=text, graph_status=transcript_graph.build(sid, text))
+    out.write_text(to_text(turns))
+    try:
+        result = memory.build(sid, turns, uploaded_at=pending.get("uploaded_at"))
+    except LLMError as e:
+        raise HTTPException(502, str(e))  # session stays pending; retry /process
+    _pending.pop(sid, None)  # only forget the upload once its memory is in the graph
+    return result
 
 
 @router.get("")

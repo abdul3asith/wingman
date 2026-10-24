@@ -47,6 +47,8 @@ class Settings:
     RESUME_URL: str = _env("RESUME_URL", "https://example.com/resume.pdf")
     DECK_URL: str = _env("DECK_URL", "https://example.com/deck.pdf")
     EVENT_NAME: str = _env("EVENT_NAME", "the conference")
+    # Dummy goal for now: every recorded conversation is scored against it and linked in the graph when relevant.
+    USER_GOAL: str = _env("USER_GOAL", "Get hired as a software engineer")
 
     ROOT: Path = ROOT
     WEB_DIR: Path = ROOT / "web"
