@@ -27,7 +27,10 @@ async def create_session(audio: UploadFile | None = File(None), transcript: str 
     if audio is not None:
         ext = Path(audio.filename or "clip.webm").suffix or ".webm"
         audio_path = settings.CACHE_DIR / "audio" / f"{sid}{ext}"
-        audio_path.write_bytes(await audio.read())
+        # Stream to disk in chunks: an hour of opus at 32 kbps is ~15 MB, no need to hold it in memory.
+        with audio_path.open("wb") as f:
+            while chunk := await audio.read(1 << 20):
+                f.write(chunk)
     _pending[sid] = {"audio_path": str(audio_path) if audio_path else None, "transcript": transcript}
     return {"session_id": sid, "status": "uploaded", "has_audio": audio_path is not None}
 

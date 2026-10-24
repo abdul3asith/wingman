@@ -15,7 +15,9 @@ import httpx
 from app.config import settings
 
 DEEPGRAM_URL = "https://api.deepgram.com/v1/listen"
-TIMEOUT_S = 120.0
+# Deepgram's pre-recorded limit (developers.deepgram.com/docs/pre-recorded-audio, "Limits"): requests exceeding
+# 10 minutes of processing on Nova/Base/Enhanced return 504, so waiting longer than that buys nothing.
+TIMEOUT_S = 600.0
 
 _CONTENT_TYPES = {
     ".webm": "audio/webm",
