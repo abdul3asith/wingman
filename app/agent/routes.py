@@ -76,6 +76,17 @@ def research(req: ResearchRequest):
     return intel.research(req.name)
 
 
+@router.get("/why/{draft_id}")
+def why(draft_id: str):
+    """Full 'why this ask?' path: graph why_path + facts, cited post, portfolio links, goal."""
+    from app.agent import why as why_mod
+
+    out = why_mod.why(draft_id)
+    if not out:
+        raise HTTPException(404, f"draft {draft_id} not found")
+    return out
+
+
 @router.get("/company/{name}")
 def company(name: str):
     """Company intel as it stands now; the page polls this while the Crunchbase portfolio job runs."""

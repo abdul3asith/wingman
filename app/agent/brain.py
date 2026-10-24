@@ -151,7 +151,7 @@ def t_draft_followups(names: list[str] | None = None, goal: str | None = None) -
 
 
 def t_explain_draft(name: str) -> tuple[dict, dict]:
-    from app.graph import queries  # why_path lives in the teammate's graph layer
+    from app.agent import why as why_mod  # full path: graph why_path + facts, post, portfolio, goal
 
     who = _resolve([name], None)
     if not who:
@@ -159,7 +159,7 @@ def t_explain_draft(name: str) -> tuple[dict, dict]:
     d = next((x for x in graph.draft_queue(None) if x.person == who[0]), None)
     if not d:
         return {"error": f"no draft for {who[0]} yet"}, {"type": "error", "message": f"no draft for {who[0]} yet"}
-    w = queries.why_path(d.id)
+    w = why_mod.why(d.id)
     intel_now = store.person_intel(who[0])
     return {"hops": w.get("hops", [])[:6]}, {"type": "why", "draft": _draft_card(d), "why": w, "intel": intel_now}
 

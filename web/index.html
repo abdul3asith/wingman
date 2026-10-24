@@ -493,7 +493,7 @@ function draftBlock(d) {
     <div class="why-slot"></div></div>`;
 }
 
-const KIND_DOT = { Topic: 'graph', WebDoc: 'web', Job: 'web', Company: 'graph', Person: 'voice', User: 'voice', Promise: 'graph', Draft: 'voice' };
+const KIND_DOT = { Topic: 'graph', WebDoc: 'web', Job: 'web', Company: 'graph', Person: 'voice', User: 'voice', Promise: 'graph', Draft: 'voice', Fact: 'graph', Post: 'web', Portfolio: 'web', Goal: 'voice' };
 function chainBlock(w) {
   const nodes = w.nodes || [];
   return `<ol class="chain">${nodes.map(n => {
@@ -560,7 +560,7 @@ document.addEventListener('click', async (ev) => {
   } else if (b.dataset.why) {
     const slot = $('.why-slot', b.closest('[data-draft]'));
     if (slot.innerHTML) { slot.innerHTML = ''; return; }
-    try { slot.innerHTML = chainBlock(await api(`/graph/why/${encodeURIComponent(b.dataset.why)}`)); stagger(slot.querySelectorAll('li')); } catch (e) { slot.innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
+    try { slot.innerHTML = chainBlock(await api(`/agent/why/${encodeURIComponent(b.dataset.why)}`)); stagger(slot.querySelectorAll('li')); } catch (e) { slot.innerHTML = `<div class="muted">${esc(e.message)}</div>`; }
   }
 });
 

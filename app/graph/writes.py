@@ -151,11 +151,18 @@ def write_draft(d: Draft) -> None:
     )
     run("MATCH (d:Draft {id:$id})-[r:BECAUSE]->() DELETE r", {"id": d.id})
     for item in d.because:
-        for label, prop in (("WebDoc", "url"), ("Job", "title"), ("Job", "url"), ("Topic", "name"), ("Promise", "text")):
+        for label, prop in (("WebDoc", "url"), ("Job", "title"), ("Job", "url"), ("Topic", "name")):
             run(
                 f"MATCH (d:Draft {{id:$id}}) MATCH (x:{label} {{{prop}:$v}}) MERGE (d)-[:BECAUSE]->(x)",
                 {"id": d.id, "v": item if label != "Topic" else norm(item)},
             )
+        # Promise texts repeat across people ("Send the deck"): only link this person's promises.
+        run(
+            """MATCH (d:Draft {id:$id})
+               MATCH (:Person {name:$person})<-[:WITH]-(:Session)-[:PROMISED]->(x:Promise {text:$v})
+               MERGE (d)-[:BECAUSE]->(x)""",
+            {"id": d.id, "v": item, "person": d.person},
+        )
 
 
 def set_draft_status(draft_id: str, status: str) -> None:
