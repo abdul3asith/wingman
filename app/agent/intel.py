@@ -249,7 +249,7 @@ def _research_company(company: str | None, domain: str | None, known_url: str | 
             store.save_portfolio(company, demo.get("portfolio", []))
             if demo.get("portfolio"):
                 store.set_company_job(company, None, f"ready: {len(demo['portfolio'])} investments")
-            steps.append({"step": f"{company}: cached demo company intel", "ok": True, "detail": "seed data"})
+            steps.append({"step": f"{company}: demo company profile (seed)", "ok": True, "detail": "seed data"})
     if profile:
         store.save_company(company, profile, profile.get("updates", []))
     ci = store.company_intel(company)
@@ -287,7 +287,7 @@ def _research_person(person: str, linkedin: str | None, company: str | None) -> 
         demo = _demo_intel(person)
         if demo:
             profile, posts, news = demo.get("profile"), demo.get("posts", []), demo.get("news", [])
-            steps.append({"step": "Bright Data offline: using cached demo intel", "ok": True, "detail": "seed data"})
+            steps.append({"step": "Demo profile (seed person)", "ok": True, "detail": "seed data"})
 
     store.save_intel(person, company, profile, posts, news)
     return {"person": person, "company": company, "linkedin": linkedin or (profile or {}).get("url"),
