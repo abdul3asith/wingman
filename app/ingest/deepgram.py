@@ -4,6 +4,9 @@ Plain httpx against https://api.deepgram.com/v1/listen (no SDK). Returns a speak
 
     Speaker 0: Hi, I'm Maya ...
     Speaker 1: Nice to meet you ...
+
+Speaker turns come from word-level `speaker` labels, not from `results.utterances`: Deepgram splits utterances
+at pauses, so quick back-and-forth lands in one utterance carrying a single speaker label.
 """
 from pathlib import Path
 
@@ -46,7 +49,6 @@ def transcribe_prerecorded(path: str, client: httpx.Client | None = None) -> str
         "diarize_model": "latest",
         "smart_format": "true",
         "punctuate": "true",
-        "utterances": "true",
     }
     headers = {"Authorization": f"Token {settings.DEEPGRAM_API_KEY}", "Content-Type": _content_type(path)}
     data = Path(path).read_bytes()
@@ -60,20 +62,26 @@ def transcribe_prerecorded(path: str, client: httpx.Client | None = None) -> str
             c.close()
     if res.status_code // 100 != 2:
         raise TranscriptionError(f"Deepgram returned {res.status_code}: {res.text[:500]}")
-    utterances = (res.json().get("results") or {}).get("utterances") or []
-    return format_utterances(utterances)
+    channels = (res.json().get("results") or {}).get("channels") or []
+    alternatives = (channels[0].get("alternatives") if channels else None) or []
+    words = (alternatives[0].get("words") if alternatives else None) or []
+    return format_words(words)
 
 
-def format_utterances(utterances: list[dict]) -> str:
-    """Sort by start, drop empty utterances, merge consecutive same-speaker turns, one 'Speaker N: ...' per line."""
-    lines: list[list] = []  # [speaker, text]
-    for u in sorted(utterances, key=lambda u: u.get("start", 0.0)):
-        text = (u.get("transcript") or "").strip()
+def format_words(words: list[dict]) -> str:
+    """Word-level `speaker` labels -> one 'Speaker N: ...' line per speaker turn.
+
+    Words are sorted by `start`; `punctuated_word` is preferred over `word`; empty words are skipped.
+    No words returns an empty string.
+    """
+    lines: list[list] = []  # [speaker, [words]]
+    for w in sorted(words, key=lambda w: w.get("start", 0.0)):
+        text = (w.get("punctuated_word") or w.get("word") or "").strip()
         if not text:
             continue
-        speaker = u.get("speaker", 0)
+        speaker = w.get("speaker", 0)
         if lines and lines[-1][0] == speaker:
-            lines[-1][1] += " " + text
+            lines[-1][1].append(text)
         else:
-            lines.append([speaker, text])
-    return "\n".join(f"Speaker {s}: {t}" for s, t in lines)
+            lines.append([speaker, [text]])
+    return "\n".join(f"Speaker {s}: {' '.join(ws)}" for s, ws in lines)
