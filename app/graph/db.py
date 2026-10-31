@@ -1,4 +1,7 @@
 """FalkorDB connection. Always use run(query, params) — never string-format values into Cypher."""
+import threading
+import time
+from collections import deque
 from typing import Any
 
 from app.config import settings
@@ -40,14 +43,39 @@ def _plain(val: Any) -> Any:
     return val
 
 
+_recent: deque = deque(maxlen=8)  # last queries, printed if FalkorDB dies (find the query that crashed it)
+RETRY_WAIT_S = 15  # docker restarts FalkorDB after a crash (restart: unless-stopped); wait this long for it
+
+
+def _reset() -> None:
+    global _db, _graph
+    _db = _graph = None
+
+
 def run(query: str, params: dict | None = None) -> list[dict]:
-    """Run Cypher, return rows as list of dicts keyed by RETURN column names."""
+    """Run Cypher, return rows as list of dicts keyed by RETURN column names. If FalkorDB drops (it can panic
+    and auto-restart), wait for it and retry once instead of failing the request."""
     import redis
 
-    try:
-        res = get_graph().query(query, params or {})
-    except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError, ConnectionRefusedError) as e:
-        raise GraphUnavailable(f"FalkorDB not reachable at {settings.FALKORDB_HOST}:{settings.FALKORDB_PORT} — run `make up`") from e
+    _recent.append(f"{time.strftime('%H:%M:%S')} [{threading.current_thread().name}] {' '.join(query.split())[:160]}")
+    for attempt in (1, 2):
+        try:
+            res = get_graph().query(query, params or {})
+            break
+        except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError, ConnectionRefusedError) as e:
+            if attempt == 1:
+                print("[db] FalkorDB connection lost; recent queries:\n  " + "\n  ".join(_recent))
+                _reset()
+                deadline = time.time() + RETRY_WAIT_S
+                while time.time() < deadline:
+                    time.sleep(1)
+                    try:
+                        get_graph().query("RETURN 1")
+                        break
+                    except Exception:
+                        _reset()
+                continue
+            raise GraphUnavailable(f"FalkorDB not reachable at {settings.FALKORDB_HOST}:{settings.FALKORDB_PORT} — run `make up`") from e
     cols = [h[1] for h in res.header] if res.header else []
     return [{col: _plain(v) for col, v in zip(cols, row)} for row in res.result_set]
 
